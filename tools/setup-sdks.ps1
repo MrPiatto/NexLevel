@@ -4,7 +4,7 @@ param([string[]]$Only)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/targets.ps1"
 
-if (-not (Get-Command geode -ErrorAction SilentlyContinue)) { throw "Geode CLI not found on PATH. Install it first (see docs/SETUP.md)." }
+if (-not (Get-Command geode -ErrorAction SilentlyContinue)) { throw "Geode CLI non trovata nel PATH. Installa gli strumenti di docs/SETUP.md (passo 1), poi apri un NUOVO terminale e riprova." }
 
 foreach ($name in $NexTargets.Keys) {
     if ($Only -and ($Only -notcontains $name)) { continue }
