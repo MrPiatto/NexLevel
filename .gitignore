@@ -1,0 +1,12 @@
+# Build outputs (all inside NEXLEVEL/build)
+/build/
+# Fetched dependencies
+/deps/geode-sdk/
+/deps/.cpm-cache/
+# Local reports
+/tools/env-report.txt
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user

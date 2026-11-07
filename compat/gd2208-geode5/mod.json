@@ -1,0 +1,14 @@
+{
+	"geode": "v5.10.1",
+	"gd": {
+		"win": "2.2081",
+		"android": "2.2081",
+		"mac": "2.2081",
+		"ios": "2.2081"
+	},
+	"id": "forg3studios.nexlevel",
+	"name": "NexLevel",
+	"version": "v0.1.0-alpha.1",
+	"developer": "Forg3 Studios",
+	"description": "Create Together. Build Beyond. Real-time collaborative level editing."
+}
