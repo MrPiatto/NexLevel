@@ -1,6 +1,6 @@
 #pragma once
 // Session messages carried in NexLevel frames (frame type = MsgType).
-#include <nexlevel/core/sync/op.hpp>
+#include <nexlevel/core/sync/replica.hpp>
 #include <nexlevel/core/version.hpp>
 
 #include <cstdint>
@@ -12,15 +12,17 @@
 namespace nexlevel::session {
 
 enum class MsgType : std::uint16_t {
-    Hello = 1,      // client -> host: who I am, which game line
-    Welcome = 2,    // host -> client: your peer id + everything sequenced so far
-    Refuse = 3,     // host -> client: join refused (then the host closes the connection)
-    Roster = 4,     // host -> all: who is in the room (sent on every join/leave/kick)
-    Kicked = 5,     // host -> client: removed by the host (then closed)
-    Closing = 6,    // host -> all: the host closed the room
-    Submit = 10,    // client -> host: a local op
-    Sequenced = 11, // host -> all: an op in global order (also the author's ack)
-    Rejected = 12,  // host -> author: op refused, will never be sequenced
+    Hello = 1,         // client -> host: who I am, game line, room key, resume token
+    Welcome = 2,       // host -> client: peer id + resume token; snapshot follows
+    Refuse = 3,        // host -> client: join refused (then the host closes the connection)
+    Roster = 4,        // host -> all: who is in the room (sent on every join/leave/kick)
+    Kicked = 5,        // host -> client: removed by the host (then closed)
+    Closing = 6,       // host -> all: the host closed the room
+    SnapshotChunk = 7, // host -> joining client: part of the level state
+    SnapshotEnd = 8,   // host -> joining client: snapshot complete, live ops follow
+    Submit = 10,       // client -> host: a local op
+    Sequenced = 11,    // host -> all: an op in global order (also the author's ack)
+    Rejected = 12,     // host -> author: op refused, will never be sequenced
 };
 
 enum class RefuseReason : std::uint8_t { WrongGameVersion = 1, SessionFull = 2, BadHello = 3, WrongRoomCode = 4 };
@@ -38,11 +40,23 @@ inline constexpr std::size_t kMaxRosterPeers = 64;
 struct Hello {
     GameTarget target = GameTarget::Unknown;
     std::uint16_t roomKey = 0;
+    std::uint64_t resumeToken = 0;  // 0 = new player; otherwise reclaim the same identity after a drop
     std::string displayName;
 };
 struct Welcome {
     sync::PeerId peerId = 0;
-    std::vector<sync::Op> backlog;  // Phase 2: full op log. Phase 5 replaces this with a snapshot + tail.
+    std::uint64_t resumeToken = 0;
+    std::uint32_t lastClientSeq = 0;  // highest op of this peer the host has applied (for resume)
+    bool resumed = false;
+};
+struct SnapshotChunk {
+    std::vector<std::pair<sync::NetId, sync::PropMap>> objects;
+    std::vector<sync::NetId> tombstones;
+};
+struct SnapshotEnd {
+    std::uint64_t lastSeq = 0;
+    std::uint32_t objectCount = 0;
+    std::uint32_t tombstoneCount = 0;
 };
 struct Refuse {
     RefuseReason reason = RefuseReason::BadHello;
@@ -54,17 +68,23 @@ struct Rejected {
 };
 
 inline constexpr std::size_t kMaxDisplayName = 32;
-inline constexpr std::size_t kMaxBacklogOps = 1'000'000;
+inline constexpr std::size_t kChunkTargetBytes = 192 * 1024;  // well under the 1 MiB frame cap
+inline constexpr std::size_t kMaxChunkEntries = 200'000;
 
 std::vector<std::uint8_t> encode(const Hello& m);
 std::vector<std::uint8_t> encode(const Welcome& m);
+std::vector<std::uint8_t> encode(const SnapshotEnd& m);
 std::vector<std::uint8_t> encode(const Refuse& m);
 std::vector<std::uint8_t> encode(const Rejected& m);
 std::vector<std::uint8_t> encode(const Roster& m);
 std::vector<std::uint8_t> encodeOpMsg(const sync::Op& op);  // Submit and Sequenced payload
+// Splits a replica into SnapshotChunk payloads of ~kChunkTargetBytes each (at least one chunk).
+std::vector<std::vector<std::uint8_t>> encodeSnapshotChunks(const sync::Replica& state);
 
 std::optional<Hello> decodeHello(std::span<const std::uint8_t> p);
 std::optional<Welcome> decodeWelcome(std::span<const std::uint8_t> p);
+std::optional<SnapshotChunk> decodeSnapshotChunk(std::span<const std::uint8_t> p);
+std::optional<SnapshotEnd> decodeSnapshotEnd(std::span<const std::uint8_t> p);
 std::optional<Refuse> decodeRefuse(std::span<const std::uint8_t> p);
 std::optional<Rejected> decodeRejected(std::span<const std::uint8_t> p);
 std::optional<Roster> decodeRoster(std::span<const std::uint8_t> p);

@@ -224,8 +224,99 @@ void testRoomCodes() {
     CHECK(!parseIPv4("192.168.1") && !parseIPv4("256.1.1.1") && !parseIPv4("a.b.c.d"));
 }
 
+void testLargeLevelJoin() {
+    SessionHost host(GameTarget::GD2208, "Host");
+    auto port = host.start(0, true);
+    CHECK(port.has_value());
+    if (!port) return;
+    const int n = 50000;
+    for (int i = 0; i < n; ++i) {
+        host.submitLocal(Op::create(host.newId(), PropMap{{1, std::to_string(i % 900 + 1)}, {2, std::to_string(i * 30)},
+                                                          {3, std::to_string(105 + (i % 20) * 30)}, {57, "1.2.3"}}));
+    }
+    for (int i = 0; i < 500; ++i) host.submitLocal(Op::erase(NetId::make(SessionHost::kHostPeer, static_cast<std::uint64_t>(i * 7 + 1))));
+    SessionClient c(GameTarget::GD2208, "Late");
+    auto t0 = std::chrono::steady_clock::now();
+    c.connect("127.0.0.1", *port, host.roomKey());
+    bool joined = waitUntil([&] { host.pump(); c.pump(); }, [&] { return c.state() == ClientState::Joined; }, 30000);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+    CHECK(joined);
+    if (!joined) { std::printf("  large join failed: state %d err '%s'\n", static_cast<int>(c.state()), c.lastError().c_str()); return; }
+    CHECK(c.replica()->view().objects().size() == static_cast<std::size_t>(n - 500));
+    CHECK(c.replica()->confirmed().fingerprint() == host.state().fingerprint());
+    std::printf("  large level join: %d objects + 500 deleted in %lld ms\n", n - 500, static_cast<long long>(ms));
+}
+
+void testReconnect() {
+    SessionHost host(GameTarget::GD2208, "Host");
+    auto port = host.start(0, true);
+    CHECK(port.has_value());
+    if (!port) return;
+    std::vector<std::unique_ptr<SessionClient>> clients;
+    for (int i = 0; i < 2; ++i) {
+        clients.push_back(std::make_unique<SessionClient>(GameTarget::GD2208, "P" + std::to_string(i)));
+        clients.back()->connect("127.0.0.1", *port, host.roomKey());
+    }
+    auto pumpAll = [&] { host.pump(); for (auto& c : clients) c->pump(); };
+    CHECK(waitUntil(pumpAll, [&] { return clients[0]->state() == ClientState::Joined && clients[1]->state() == ClientState::Joined; }, 5000));
+    auto idBefore = *clients[0]->peerId();
+
+    std::mt19937 rng(77);
+    int drops = 0, reconnects = 0, editsWhileDown = 0;
+    bool wasDown = false;
+    int sinceUp = 0;
+    for (int step = 0; step < 4000 && reconnects < 4; ++step) {
+        // Drop the line again only once the client is back in and has been editing for a while.
+        if (clients[0]->state() == ClientState::Joined && ++sinceUp > 60 && drops < 4) {
+            clients[0]->simulateNetworkDrop();
+            ++drops;
+            sinceUp = 0;
+        }
+        for (auto& c : clients) {
+            if (!c->replica()) continue;
+            if (rng() % 2 == 0) {
+                auto st = c->state();
+                if (c->submitLocal(randomOp(c->replica()->view(), *c->newId(), rng)) && st == ClientState::Reconnecting) ++editsWhileDown;
+            }
+        }
+        if (rng() % 3 == 0) host.submitLocal(randomOp(host.state(), host.newId(), rng));
+        pumpAll();
+        bool down = clients[0]->state() == ClientState::Reconnecting;
+        if (wasDown && clients[0]->state() == ClientState::Joined) ++reconnects;
+        wasDown = down;
+        std::this_thread::sleep_for(std::chrono::milliseconds(3));
+    }
+    bool converged = waitUntil(pumpAll, [&] {
+        const auto truth = host.state().fingerprint();
+        for (auto& c : clients) {
+            if (c->state() != ClientState::Joined) return false;
+            const auto* r = c->replica();
+            if (!r->pending().empty() || r->confirmed().fingerprint() != truth || r->view().fingerprint() != truth) return false;
+        }
+        return true;
+    }, 15000);
+    CHECK(drops == 4);
+    CHECK(reconnects == drops);
+    CHECK(editsWhileDown > 0);
+    CHECK(converged);
+    CHECK(*clients[0]->peerId() == idBefore);  // same identity after every reconnect
+    CHECK(!clients[0]->takeIdentityReset());
+    CHECK(host.peers().size() == 3);
+    std::printf("  reconnect: %d drops, %d reconnects, %d edits made while disconnected, converged=%d\n", drops, reconnects,
+        editsWhileDown, converged ? 1 : 0);
+
+    // A kicked player must not come back on its own.
+    CHECK(host.kick(*clients[1]->peerId()));
+    bool kicked = waitUntil(pumpAll, [&] { return clients[1]->state() == ClientState::Kicked; }, 5000);
+    CHECK(kicked);
+    for (int i = 0; i < 200; ++i) { pumpAll(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+    CHECK(clients[1]->state() == ClientState::Kicked && host.peers().size() == 2);
+}
+
 void runSessionTests() {
     testRoomCodes();
+    testLargeLevelJoin();
+    testReconnect();
     testLocalAddress();
     testLoopbackSession();
     testConnectFailure();

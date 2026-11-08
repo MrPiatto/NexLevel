@@ -26,6 +26,14 @@ public:
     bool isDeleted(NetId id) const { return m_tombstones.contains(id); }
     const std::map<NetId, ObjectState>& objects() const noexcept { return m_objects; }
     std::uint64_t lastSeq() const noexcept { return m_lastSeq; }
+    const std::set<NetId>& tombstones() const noexcept { return m_tombstones; }
+
+    // Replace the whole state (snapshot received when joining or reconnecting).
+    void restore(std::map<NetId, ObjectState> objects, std::set<NetId> tombstones, std::uint64_t lastSeq) {
+        m_objects = std::move(objects);
+        m_tombstones = std::move(tombstones);
+        m_lastSeq = lastSeq;
+    }
 
     // Copies one object's existence/tombstone/props from another replica (used to rebuild views).
     void copyObjectFrom(const Replica& src, NetId id);

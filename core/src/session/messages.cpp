@@ -2,18 +2,48 @@
 
 namespace nexlevel::session {
 
+namespace {
+void writeProps(ByteWriter& w, const sync::PropMap& props) {
+    w.u32(static_cast<std::uint32_t>(props.size()));
+    for (const auto& [k, v] : props) {
+        w.u32(static_cast<std::uint32_t>(k));
+        w.str(v);
+    }
+}
+bool readProps(ByteReader& r, sync::PropMap& out) {
+    const sync::OpLimits limits;
+    auto n = r.u32();
+    if (!r.ok() || n > limits.maxProps) return false;
+    for (std::uint32_t i = 0; i < n; ++i) {
+        auto k = static_cast<int>(r.u32());
+        auto v = r.str(limits.maxValueLen);
+        if (!r.ok() || !out.emplace(k, std::move(v)).second) return false;
+    }
+    return true;
+}
+} // namespace
+
 std::vector<std::uint8_t> encode(const Hello& m) {
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(m.target));
     w.u16(m.roomKey);
+    w.u64(m.resumeToken);
     w.str(m.displayName.substr(0, kMaxDisplayName));
     return w.take();
 }
 std::vector<std::uint8_t> encode(const Welcome& m) {
     ByteWriter w;
     w.u16(m.peerId);
-    w.u32(static_cast<std::uint32_t>(m.backlog.size()));
-    for (const auto& op : m.backlog) sync::encodeOp(w, op);
+    w.u64(m.resumeToken);
+    w.u32(m.lastClientSeq);
+    w.u8(m.resumed ? 1 : 0);
+    return w.take();
+}
+std::vector<std::uint8_t> encode(const SnapshotEnd& m) {
+    ByteWriter w;
+    w.u64(m.lastSeq);
+    w.u32(m.objectCount);
+    w.u32(m.tombstoneCount);
     return w.take();
 }
 std::vector<std::uint8_t> encode(const Refuse& m) {
@@ -43,11 +73,50 @@ std::vector<std::uint8_t> encodeOpMsg(const sync::Op& op) {
     return w.take();
 }
 
+std::vector<std::vector<std::uint8_t>> encodeSnapshotChunks(const sync::Replica& state) {
+    std::vector<std::vector<std::uint8_t>> chunks;
+    // Chunk layout: u32 objectCount, objects..., u32 tombstoneCount, tombstones...
+    ByteWriter body;
+    std::uint32_t count = 0;
+    auto flushObjects = [&](bool force) {
+        if (count == 0 && !force) return;
+        ByteWriter w;
+        w.u32(count);
+        w.bytes(body.data());
+        w.u32(0);  // no tombstones in object chunks
+        chunks.push_back(w.take());
+        body = ByteWriter{};
+        count = 0;
+    };
+    for (const auto& [id, obj] : state.objects()) {
+        body.u64(id.value);
+        writeProps(body, obj.props);
+        ++count;
+        if (body.size() >= kChunkTargetBytes || count >= kMaxChunkEntries) flushObjects(false);
+    }
+    flushObjects(false);
+
+    // Tombstones, 8 bytes each.
+    std::vector<sync::NetId> dead(state.tombstones().begin(), state.tombstones().end());
+    for (std::size_t i = 0; i < dead.size();) {
+        std::size_t n = std::min(dead.size() - i, std::min<std::size_t>(kChunkTargetBytes / 8, kMaxChunkEntries));
+        ByteWriter w;
+        w.u32(0);
+        w.u32(static_cast<std::uint32_t>(n));
+        for (std::size_t j = 0; j < n; ++j) w.u64(dead[i + j].value);
+        chunks.push_back(w.take());
+        i += n;
+    }
+    if (chunks.empty()) flushObjects(true);  // empty level: still one (empty) chunk
+    return chunks;
+}
+
 std::optional<Hello> decodeHello(std::span<const std::uint8_t> p) {
     ByteReader r(p);
     Hello m;
     m.target = static_cast<GameTarget>(r.u8());
     m.roomKey = r.u16();
+    m.resumeToken = r.u64();
     m.displayName = r.str(kMaxDisplayName);
     if (!r.atEnd()) return std::nullopt;
     return m;
@@ -56,15 +125,38 @@ std::optional<Welcome> decodeWelcome(std::span<const std::uint8_t> p) {
     ByteReader r(p);
     Welcome m;
     m.peerId = r.u16();
-    auto n = r.u32();
-    if (!r.ok() || n > kMaxBacklogOps) return std::nullopt;
-    m.backlog.reserve(n);
-    for (std::uint32_t i = 0; i < n; ++i) {
-        auto op = sync::decodeOp(r);
-        if (!op) return std::nullopt;
-        m.backlog.push_back(std::move(*op));
-    }
+    m.resumeToken = r.u64();
+    m.lastClientSeq = r.u32();
+    m.resumed = r.u8() != 0;
     if (!r.atEnd() || m.peerId == 0) return std::nullopt;
+    return m;
+}
+std::optional<SnapshotChunk> decodeSnapshotChunk(std::span<const std::uint8_t> p) {
+    ByteReader r(p);
+    SnapshotChunk m;
+    auto nObj = r.u32();
+    if (!r.ok() || nObj > kMaxChunkEntries) return std::nullopt;
+    m.objects.reserve(nObj);
+    for (std::uint32_t i = 0; i < nObj; ++i) {
+        sync::NetId id{r.u64()};
+        sync::PropMap props;
+        if (!r.ok() || !id.valid() || !readProps(r, props)) return std::nullopt;
+        m.objects.emplace_back(id, std::move(props));
+    }
+    auto nDead = r.u32();
+    if (!r.ok() || nDead > kMaxChunkEntries) return std::nullopt;
+    m.tombstones.reserve(nDead);
+    for (std::uint32_t i = 0; i < nDead; ++i) m.tombstones.push_back(sync::NetId{r.u64()});
+    if (!r.atEnd()) return std::nullopt;
+    return m;
+}
+std::optional<SnapshotEnd> decodeSnapshotEnd(std::span<const std::uint8_t> p) {
+    ByteReader r(p);
+    SnapshotEnd m;
+    m.lastSeq = r.u64();
+    m.objectCount = r.u32();
+    m.tombstoneCount = r.u32();
+    if (!r.atEnd()) return std::nullopt;
     return m;
 }
 std::optional<Refuse> decodeRefuse(std::span<const std::uint8_t> p) {

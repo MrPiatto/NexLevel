@@ -37,7 +37,11 @@ Role SessionManager::role() const {
 
 bool SessionManager::inSession() const {
     if (m_host) return m_host->running();
-    if (m_client) return m_client->state() == session::ClientState::Joined;
+    if (m_client) {
+        auto st = m_client->state();
+        // While reconnecting, local edits keep being recorded and are sent once back in the room.
+        return st == session::ClientState::Joined || st == session::ClientState::Reconnecting;
+    }
     return false;
 }
 
@@ -120,6 +124,7 @@ std::string SessionManager::statusText() const {
         case ClientState::Connecting: return "Connecting...";
         case ClientState::Joining: return "Joining...";
         case ClientState::Joined: return "Connected - " + std::to_string(m_client->peers().size()) + " in room";
+        case ClientState::Reconnecting: return "Reconnecting...";
         default: return "Disconnected";
     }
 }
@@ -202,10 +207,22 @@ void SessionManager::tick(float) {
         m_lastClientState = state;
         switch (state) {
             case ClientState::Joined:
-                m_lastJoined = true;
-                notify("Joined the room", NotificationIcon::Success);
-                if (m_editor) m_editor->rebuildFromSession();
-                ids.clear();
+                if (!m_lastJoined) {
+                    m_lastJoined = true;
+                    notify("Joined the room", NotificationIcon::Success);
+                    if (m_editor) m_editor->rebuildFromSession();
+                    ids.clear();
+                } else {
+                    notify("Reconnected", NotificationIcon::Success);
+                    if (m_client->takeIdentityReset() && m_editor) {  // the host no longer knew us
+                        m_editor->rebuildFromSession();
+                        ids.clear();
+                    }
+                }
+                break;
+            case ClientState::Reconnecting:
+                log::warn("NexLevel: connection lost ({}), reconnecting", m_client->lastError());
+                notify("Connection lost - reconnecting...", NotificationIcon::Warning);
                 break;
             case ClientState::Refused: {
                 auto reason = m_client->refuseReason();

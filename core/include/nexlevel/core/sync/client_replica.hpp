@@ -22,6 +22,11 @@ public:
     // i.e. what the editor adapter must apply to GD objects.
     std::vector<NetId> onSequenced(const Op& op);
 
+    // A full snapshot from the host (join or reconnect). Pending ops the host already applied
+    // (clientSeq <= lastClientSeqSeen) are dropped; the rest stay pending and must be resent.
+    // Returns ids whose visible state changed.
+    std::vector<NetId> loadSnapshot(const Replica& snapshot, std::uint32_t lastClientSeqSeen);
+
     // The host refused one of our ops (it will never be sequenced): drop it and restore the view.
     std::vector<NetId> onRejected(std::uint32_t clientSeq);
 

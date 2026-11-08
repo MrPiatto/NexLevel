@@ -24,6 +24,10 @@ public:
 
     const Replica& state() const noexcept { return m_state; }
     std::uint64_t lastSeq() const noexcept { return m_nextSeq - 1; }
+    std::uint32_t highestClientSeq(PeerId peer) const {
+        auto it = m_highestClientSeq.find(peer);
+        return it == m_highestClientSeq.end() ? 0 : it->second;
+    }
 
     // For reconnect replay: every sequenced op with seq > after, oldest first.
     std::vector<Op> opsSince(std::uint64_t after) const;

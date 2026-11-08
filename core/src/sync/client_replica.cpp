@@ -29,6 +29,25 @@ std::vector<NetId> ClientReplica::onSequenced(const Op& op) {
     return {};
 }
 
+std::vector<NetId> ClientReplica::loadSnapshot(const Replica& snapshot, std::uint32_t lastClientSeqSeen) {
+    auto before = m_view.objects();
+    while (!m_pending.empty() && m_pending.front().clientSeq <= lastClientSeqSeen) m_pending.pop_front();
+    m_confirmed = snapshot;
+    m_view = snapshot;
+    for (const auto& p : m_pending) m_view.apply(p);
+
+    std::vector<NetId> changed;
+    const auto& after = m_view.objects();
+    for (const auto& [id, state] : after) {
+        auto it = before.find(id);
+        if (it == before.end() || !(it->second == state)) changed.push_back(id);
+    }
+    for (const auto& [id, _] : before) {
+        if (!after.contains(id)) changed.push_back(id);
+    }
+    return changed;
+}
+
 std::vector<NetId> ClientReplica::onRejected(std::uint32_t clientSeq) {
     for (auto it = m_pending.begin(); it != m_pending.end(); ++it) {
         if (it->clientSeq == clientSeq) {

@@ -4,17 +4,21 @@
 
 #include <nexlevel/core/session/room_code.hpp>
 
-#include <random>
-
 #include <chrono>
 #include <future>
-#include <thread>
 #include <map>
+#include <random>
+#include <thread>
 #include <unordered_map>
 
 namespace nexlevel::session {
 
 using asio::ip::tcp;
+using Clock = std::chrono::steady_clock;
+
+namespace {
+constexpr auto kResumeWindow = std::chrono::seconds(120);  // how long a dropped player can reclaim their identity
+}
 
 struct SessionHost::Impl {
     struct Event {
@@ -26,7 +30,14 @@ struct SessionHost::Impl {
     struct Peer {
         sync::PeerId id = 0;
         std::string name;
+        std::uint64_t token = 0;
         bool joined = false;
+    };
+    struct Identity {  // survives the connection, for reconnects
+        sync::PeerId id = 0;
+        std::string name;
+        bool connected = false;
+        Clock::time_point leftAt{};
     };
 
     GameTarget target;
@@ -47,7 +58,9 @@ struct SessionHost::Impl {
     sync::NetIdAllocator ids{kHostPeer};
     std::uint32_t hostClientSeq = 1;
     std::map<std::uint32_t, Peer> peers;
+    std::unordered_map<std::uint64_t, Identity> identities;  // by resume token
     sync::PeerId nextPeer = kHostPeer + 1;
+    std::mt19937_64 rng{std::random_device{}()};
 
     Impl(GameTarget t, std::string n) : target(t), hostName(std::move(n)) {}
 
@@ -106,41 +119,68 @@ struct SessionHost::Impl {
             if (p.joined) sendTo(conn, MsgType::Roster, payload);
         }
     }
-
     std::size_t joinedCount() const {
         std::size_t n = 0;
         for (auto& [_, p] : peers) n += p.joined ? 1 : 0;
         return n;
     }
 
-    void handleFrame(std::uint32_t conn, Peer& p, const Frame& f, std::vector<sync::NetId>& changed) {
-        const auto type = static_cast<MsgType>(f.type);
-        if (!p.joined) {
-            auto hello = type == MsgType::Hello ? decodeHello(f.payload) : std::nullopt;
-            if (!hello) {
-                sendTo(conn, MsgType::Refuse, encode(Refuse{RefuseReason::BadHello, target}), true);
-                return;
+    // Welcome + the whole level in chunks + end marker. Runs on the main thread, so the snapshot is
+    // consistent: ops sequenced later are queued behind it on the same ordered connection.
+    void sendJoinPackage(std::uint32_t conn, const Peer& p, bool resumed) {
+        sendTo(conn, MsgType::Welcome, encode(Welcome{p.id, p.token, sequencer.highestClientSeq(p.id), resumed}));
+        const auto& state = sequencer.state();
+        for (auto& chunk : encodeSnapshotChunks(state)) sendTo(conn, MsgType::SnapshotChunk, std::move(chunk));
+        sendTo(conn, MsgType::SnapshotEnd, encode(SnapshotEnd{state.lastSeq(), static_cast<std::uint32_t>(state.objects().size()),
+                                                              static_cast<std::uint32_t>(state.tombstones().size())}));
+    }
+
+    void handleHello(std::uint32_t conn, Peer& p, const Frame& f) {
+        auto hello = static_cast<MsgType>(f.type) == MsgType::Hello ? decodeHello(f.payload) : std::nullopt;
+        if (!hello) {
+            sendTo(conn, MsgType::Refuse, encode(Refuse{RefuseReason::BadHello, target}), true);
+            return;
+        }
+        if (hello->roomKey != roomKey) {
+            sendTo(conn, MsgType::Refuse, encode(Refuse{RefuseReason::WrongRoomCode, target}), true);
+            return;
+        }
+        if (!canShareSession(hello->target, target)) {  // V1: same GD version only
+            sendTo(conn, MsgType::Refuse, encode(Refuse{RefuseReason::WrongGameVersion, target}), true);
+            return;
+        }
+        bool resumed = false;
+        if (hello->resumeToken != 0) {
+            auto it = identities.find(hello->resumeToken);
+            if (it != identities.end() && !it->second.connected) {
+                p.id = it->second.id;
+                p.name = it->second.name;
+                p.token = hello->resumeToken;
+                it->second.connected = true;
+                resumed = true;
             }
-            if (hello->roomKey != roomKey) {
-                sendTo(conn, MsgType::Refuse, encode(Refuse{RefuseReason::WrongRoomCode, target}), true);
-                return;
-            }
-            if (!canShareSession(hello->target, target)) {  // V1: same GD version only
-                sendTo(conn, MsgType::Refuse, encode(Refuse{RefuseReason::WrongGameVersion, target}), true);
-                return;
-            }
+        }
+        if (!resumed) {
             if (joinedCount() >= kMaxPeers) {
                 sendTo(conn, MsgType::Refuse, encode(Refuse{RefuseReason::SessionFull, target}), true);
                 return;
             }
             p.id = nextPeer++;
             p.name = hello->displayName;
-            p.joined = true;
-            sendTo(conn, MsgType::Welcome, encode(Welcome{p.id, sequencer.opsSince(0)}));
-            broadcastRoster();
+            do { p.token = rng(); } while (p.token == 0 || identities.contains(p.token));
+            identities[p.token] = Identity{p.id, p.name, true, {}};
+        }
+        p.joined = true;
+        sendJoinPackage(conn, p, resumed);
+        broadcastRoster();
+    }
+
+    void handleFrame(std::uint32_t conn, Peer& p, const Frame& f, std::vector<sync::NetId>& changed) {
+        if (!p.joined) {
+            handleHello(conn, p, f);
             return;
         }
-        if (type != MsgType::Submit) {
+        if (static_cast<MsgType>(f.type) != MsgType::Submit) {
             closeConn(conn, "unexpected message");
             return;
         }
@@ -149,17 +189,24 @@ struct SessionHost::Impl {
             closeConn(conn, "malformed op");
             return;
         }
+        const auto clientSeq = op->clientSeq;
         op->author = p.id;  // identity comes from the connection, never from the payload
         auto res = sequencer.submit(std::move(*op));
         if (res.sequenced) {
             changed.push_back(res.sequenced->target);
             broadcast(*res.sequenced);
         } else if (res.reason == sync::HostSequencer::Reject::ForgedId) {
-            // clientSeq survives in the rejected op only through the original; re-decode to report it.
-            auto original = decodeOpMsg(f.payload);
-            sendTo(conn, MsgType::Rejected, encode(Rejected{original ? original->clientSeq : 0, 1}));
+            sendTo(conn, MsgType::Rejected, encode(Rejected{clientSeq, 1}));
         }
-        // Duplicates are dropped silently: the original was already sequenced and acknowledged.
+        // Duplicates (resends after a reconnect) are dropped: the original was already sequenced.
+    }
+
+    void expireIdentities() {
+        auto now = Clock::now();
+        for (auto it = identities.begin(); it != identities.end();) {
+            if (!it->second.connected && now - it->second.leftAt > kResumeWindow) it = identities.erase(it);
+            else ++it;
+        }
     }
 };
 
@@ -182,7 +229,7 @@ std::optional<std::uint16_t> SessionHost::start(std::uint16_t port, bool loopbac
         return std::nullopt;
     }
     m->port = m->acceptor->local_endpoint(ec).port();
-    m->roomKey = static_cast<std::uint16_t>(std::random_device{}() & kRoomKeyMask);
+    m->roomKey = static_cast<std::uint16_t>(m->rng() & kRoomKeyMask);
     m->acceptNext();
     m->net.start();
     m->running = true;
@@ -222,8 +269,16 @@ std::vector<sync::NetId> SessionHost::pump() {
             case Impl::Event::Connected: m->peers[e.conn] = {}; break;
             case Impl::Event::Closed: {
                 auto it = m->peers.find(e.conn);
-                bool wasJoined = it != m->peers.end() && it->second.joined;
-                m->peers.erase(e.conn);
+                if (it == m->peers.end()) break;
+                bool wasJoined = it->second.joined;
+                if (wasJoined) {
+                    auto id = m->identities.find(it->second.token);
+                    if (id != m->identities.end()) {
+                        id->second.connected = false;
+                        id->second.leftAt = Clock::now();
+                    }
+                }
+                m->peers.erase(it);
                 if (wasJoined) m->broadcastRoster();
                 break;
             }
@@ -234,6 +289,7 @@ std::vector<sync::NetId> SessionHost::pump() {
             }
         }
     }
+    m->expireIdentities();
     return changed;
 }
 
@@ -248,12 +304,12 @@ sync::Op SessionHost::submitLocal(sync::Op op) {
 
 sync::NetId SessionHost::newId() { return m->ids.next(); }
 const sync::Replica& SessionHost::state() const noexcept { return m->sequencer.state(); }
-
 std::vector<PeerInfo> SessionHost::peers() const { return m->roster(); }
 
 bool SessionHost::kick(sync::PeerId peer) {
     for (auto it = m->peers.begin(); it != m->peers.end(); ++it) {
         if (it->second.joined && it->second.id == peer) {
+            m->identities.erase(it->second.token);  // a kicked player cannot "reconnect"
             m->sendTo(it->first, MsgType::Kicked, {}, true);
             m->peers.erase(it);
             m->broadcastRoster();

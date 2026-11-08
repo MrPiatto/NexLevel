@@ -6,14 +6,22 @@
 
 #include <chrono>
 #include <future>
+#include <set>
 
 namespace nexlevel::session {
 
 using asio::ip::tcp;
+using Clock = std::chrono::steady_clock;
+
+namespace {
+constexpr auto kRetryInterval = std::chrono::seconds(1);
+constexpr int kMaxReconnectAttempts = 30;
+}
 
 struct SessionClient::Impl {
     struct Event {
         enum Kind { Connected, FrameIn, Closed, ConnectFailed } kind;
+        std::uint32_t generation = 0;
         Frame frame;
         std::string reason;
     };
@@ -35,7 +43,21 @@ struct SessionClient::Impl {
     std::optional<sync::ClientReplica> replica;
     std::optional<sync::NetIdAllocator> ids;
     std::vector<PeerInfo> peers;
+    std::string host;
+    std::uint16_t port = 0;
     std::uint16_t roomKey = 0;
+    std::uint64_t resumeToken = 0;
+    std::uint32_t generation = 0;  // ignores events from connections that were replaced
+    bool attemptInFlight = false;
+    bool helloSent = false;
+    int reconnectAttempts = 0;
+    Clock::time_point nextRetry{};
+    bool identityReset = false;
+
+    // Snapshot being received.
+    std::optional<Welcome> welcome;
+    std::map<sync::NetId, sync::ObjectState> incomingObjects;
+    std::set<sync::NetId> incomingTombstones;
 
     Impl(GameTarget t, std::string n) : target(t), name(std::move(n)) {}
 
@@ -44,6 +66,88 @@ struct SessionClient::Impl {
         net.post([this, bytes = std::move(bytes)]() mutable {
             if (conn) conn->send(std::move(bytes));
         });
+    }
+
+    void startAttempt() {
+        if (!netStarted) {
+            net.start();
+            netStarted = true;
+        }
+        attemptInFlight = true;
+        helloSent = false;
+        const auto gen = ++generation;
+        net.post([this, gen, h = host, p = port] {
+            if (conn) {
+                conn->close("replaced");
+                conn.reset();
+            }
+            auto resolver = std::make_shared<tcp::resolver>(net.io());
+            resolver->async_resolve(h, std::to_string(p), [this, gen, resolver](std::error_code ec, tcp::resolver::results_type results) {
+                if (ec) { events.push({Event::ConnectFailed, gen, {}, "resolve: " + ec.message()}); return; }
+                auto socket = std::make_shared<tcp::socket>(net.io());
+                asio::async_connect(*socket, results, [this, gen, socket](std::error_code ec2, const tcp::endpoint&) {
+                    if (ec2) { events.push({Event::ConnectFailed, gen, {}, "connect: " + ec2.message()}); return; }
+                    conn = std::make_shared<net::Connection>(
+                        std::move(*socket), gen,
+                        [this](std::uint32_t g, Frame f) { events.push({Event::FrameIn, g, std::move(f), {}}); },
+                        [this](std::uint32_t g, std::string r) { events.push({Event::Closed, g, {}, std::move(r)}); });
+                    conn->start();
+                    events.push({Event::Connected, gen, {}, {}});
+                });
+            });
+        });
+    }
+
+    bool hasJoinedBefore() const { return replica.has_value(); }
+
+    // Connection lost or attempt failed: reconnect if we had joined, otherwise give up.
+    void connectionLost(const std::string& reason) {
+        attemptInFlight = false;
+        if (state == ClientState::Refused || state == ClientState::Kicked || state == ClientState::RoomClosed ||
+            state == ClientState::Disconnected) {
+            return;
+        }
+        error = reason;
+        if (hasJoinedBefore() && reconnectAttempts < kMaxReconnectAttempts) {
+            state = ClientState::Reconnecting;
+            ++reconnectAttempts;
+            nextRetry = Clock::now() + kRetryInterval;
+            welcome.reset();
+            return;
+        }
+        state = ClientState::Disconnected;
+    }
+
+    void finishSnapshot(const SnapshotEnd& end, std::vector<sync::NetId>& changed) {
+        sync::Replica snapshot;
+        snapshot.restore(std::move(incomingObjects), std::move(incomingTombstones), end.lastSeq);
+        incomingObjects.clear();
+        incomingTombstones.clear();
+
+        const auto& w = *welcome;
+        if (replica && w.resumed && w.peerId == replica->self()) {
+            // Same identity: keep pending local edits the host has not applied yet, then resend them.
+            auto c = replica->loadSnapshot(snapshot, w.lastClientSeq);
+            changed.insert(changed.end(), c.begin(), c.end());
+            for (const auto& op : replica->pending()) send(MsgType::Submit, encodeOpMsg(op));
+        } else {
+            // New identity (first join, or the host no longer knew us): start clean.
+            std::vector<sync::NetId> oldIds;
+            if (replica) {
+                for (const auto& [id, _] : replica->view().objects()) oldIds.push_back(id);
+                identityReset = true;
+            }
+            replica.emplace(w.peerId);
+            ids.emplace(w.peerId);
+            auto c = replica->loadSnapshot(snapshot, 0);
+            changed.insert(changed.end(), c.begin(), c.end());
+            changed.insert(changed.end(), oldIds.begin(), oldIds.end());
+        }
+        resumeToken = w.resumeToken;
+        welcome.reset();
+        reconnectAttempts = 0;
+        error.clear();
+        state = ClientState::Joined;
     }
 };
 
@@ -71,68 +175,73 @@ bool SessionClient::connectCode(std::string_view code) {
 }
 
 void SessionClient::connect(const std::string& host, std::uint16_t port, std::uint16_t roomKey) {
+    m->host = host;
+    m->port = port;
     m->roomKey = roomKey;
     m->state = ClientState::Connecting;
     m->error.clear();
-    if (!m->netStarted) {
-        m->net.start();
-        m->netStarted = true;
-    }
-    m->net.post([this, host, port] {
-        auto resolver = std::make_shared<tcp::resolver>(m->net.io());
-        resolver->async_resolve(host, std::to_string(port), [this, resolver](std::error_code ec, tcp::resolver::results_type results) {
-            if (ec) { m->events.push({Impl::Event::ConnectFailed, {}, "resolve: " + ec.message()}); return; }
-            auto socket = std::make_shared<tcp::socket>(m->net.io());
-            asio::async_connect(*socket, results, [this, socket](std::error_code ec2, const tcp::endpoint&) {
-                if (ec2) { m->events.push({Impl::Event::ConnectFailed, {}, "connect: " + ec2.message()}); return; }
-                m->conn = std::make_shared<net::Connection>(
-                    std::move(*socket), 1,
-                    [this](std::uint32_t, Frame f) { m->events.push({Impl::Event::FrameIn, std::move(f), {}}); },
-                    [this](std::uint32_t, std::string r) { m->events.push({Impl::Event::Closed, {}, std::move(r)}); });
-                m->conn->start();
-                m->events.push({Impl::Event::Connected, {}, {}});
-            });
-        });
-    });
+    m->startAttempt();
 }
 
 void SessionClient::disconnect() {
+    m->state = ClientState::Disconnected;
     if (m->netStarted) {
         m->net.post([this] { if (m->conn) m->conn->close("disconnected by user"); });
     }
-    m->state = ClientState::Disconnected;
+}
+
+void SessionClient::simulateNetworkDrop() {
+    if (m->netStarted) {
+        m->net.post([this] { if (m->conn) m->conn->close("simulated network drop"); });
+    }
+}
+
+bool SessionClient::takeIdentityReset() {
+    bool r = m->identityReset;
+    m->identityReset = false;
+    return r;
 }
 
 std::vector<sync::NetId> SessionClient::pump() {
     std::vector<sync::NetId> changed;
+
+    if (m->state == ClientState::Reconnecting && !m->attemptInFlight && Clock::now() >= m->nextRetry) {
+        m->startAttempt();
+    }
+
     for (auto& e : m->events.drain()) {
+        if (e.generation != m->generation) continue;  // from a replaced connection
         switch (e.kind) {
             case Impl::Event::Connected:
-                m->state = ClientState::Joining;
-                m->send(MsgType::Hello, encode(Hello{m->target, m->roomKey, m->name}));
+                if (m->state == ClientState::Connecting) m->state = ClientState::Joining;
+                m->helloSent = true;
+                m->send(MsgType::Hello, encode(Hello{m->target, m->roomKey, m->resumeToken, m->name}));
                 break;
             case Impl::Event::ConnectFailed:
-                m->state = ClientState::Disconnected;
-                m->error = e.reason;
-                break;
             case Impl::Event::Closed:
-                if (m->state != ClientState::Refused && m->state != ClientState::Kicked && m->state != ClientState::RoomClosed) {
-                    m->state = ClientState::Disconnected;
-                    m->error = e.reason;
-                }
+                m->connectionLost(e.reason);
                 break;
             case Impl::Event::FrameIn: {
                 const auto type = static_cast<MsgType>(e.frame.type);
-                if (m->state == ClientState::Joining && type == MsgType::Welcome) {
-                    auto w = decodeWelcome(e.frame.payload);
-                    if (!w) { m->error = "malformed welcome"; disconnect(); break; }
-                    m->replica.emplace(w->peerId);
-                    m->ids.emplace(w->peerId);
-                    for (const auto& op : w->backlog) {
-                        auto c = m->replica->onSequenced(op);
-                        changed.insert(changed.end(), c.begin(), c.end());
+                const bool joining = m->state == ClientState::Joining || m->state == ClientState::Reconnecting;
+                if (joining && type == MsgType::Welcome) {
+                    m->welcome = decodeWelcome(e.frame.payload);
+                    if (!m->welcome) { m->error = "malformed welcome"; disconnect(); break; }
+                    m->incomingObjects.clear();
+                    m->incomingTombstones.clear();
+                } else if (joining && m->welcome && type == MsgType::SnapshotChunk) {
+                    auto chunk = decodeSnapshotChunk(e.frame.payload);
+                    if (!chunk) { m->error = "malformed snapshot"; disconnect(); break; }
+                    for (auto& [id, props] : chunk->objects) m->incomingObjects[id] = sync::ObjectState{std::move(props)};
+                    for (auto id : chunk->tombstones) m->incomingTombstones.insert(id);
+                } else if (joining && m->welcome && type == MsgType::SnapshotEnd) {
+                    auto end = decodeSnapshotEnd(e.frame.payload);
+                    if (!end || end->objectCount != m->incomingObjects.size() || end->tombstoneCount != m->incomingTombstones.size()) {
+                        m->error = "incomplete snapshot";
+                        disconnect();
+                        break;
                     }
-                    m->state = ClientState::Joined;
+                    m->finishSnapshot(*end, changed);
                 } else if (type == MsgType::Refuse) {
                     auto r = decodeRefuse(e.frame.payload);
                     m->state = ClientState::Refused;
@@ -152,8 +261,7 @@ std::vector<sync::NetId> SessionClient::pump() {
                     auto c = m->replica->onSequenced(*op);
                     changed.insert(changed.end(), c.begin(), c.end());
                 } else if (m->state == ClientState::Joined && type == MsgType::Rejected) {
-                    auto r = decodeRejected(e.frame.payload);
-                    if (r) {
+                    if (auto r = decodeRejected(e.frame.payload)) {
                         auto c = m->replica->onRejected(r->clientSeq);
                         changed.insert(changed.end(), c.begin(), c.end());
                     }
@@ -166,10 +274,10 @@ std::vector<sync::NetId> SessionClient::pump() {
 }
 
 std::optional<sync::Op> SessionClient::submitLocal(sync::Op op) {
-    if (m->state != ClientState::Joined) return std::nullopt;
+    if (!m->replica || (m->state != ClientState::Joined && m->state != ClientState::Reconnecting)) return std::nullopt;
     auto sent = m->replica->local(std::move(op));
-    m->send(MsgType::Submit, encodeOpMsg(sent));
-    return sent;
+    if (m->state == ClientState::Joined) m->send(MsgType::Submit, encodeOpMsg(sent));
+    return sent;  // while reconnecting it stays pending and is resent after the snapshot
 }
 
 std::optional<sync::NetId> SessionClient::newId() {

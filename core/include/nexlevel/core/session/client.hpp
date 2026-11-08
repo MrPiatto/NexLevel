@@ -11,7 +11,9 @@
 
 namespace nexlevel::session {
 
-enum class ClientState : std::uint8_t { Idle, Connecting, Joining, Joined, Refused, Kicked, RoomClosed, Disconnected };
+// Reconnecting: the connection dropped after joining; the client retries on its own and keeps
+// accepting local edits, which are sent once it is back in the room.
+enum class ClientState : std::uint8_t { Idle, Connecting, Joining, Joined, Reconnecting, Refused, Kicked, RoomClosed, Disconnected };
 
 class SessionClient {
 public:
@@ -25,10 +27,16 @@ public:
     bool connectCode(std::string_view code);
     void disconnect();
 
+    // Test hook: cut the connection as if the network dropped (triggers automatic reconnection).
+    void simulateNetworkDrop();
+    // True once after a reconnect that came back with a different identity (host restarted):
+    // the editor should rebuild everything from the session.
+    bool takeIdentityReset();
+
     // Process network events. Returns ids whose visible state changed (apply them to the local editor).
     std::vector<sync::NetId> pump();
 
-    // A local editor change. Only while Joined; returns the op as sent.
+    // A local editor change. While Joined or Reconnecting (sent after reconnecting); returns the op.
     std::optional<sync::Op> submitLocal(sync::Op op);
     std::optional<sync::NetId> newId();
 
