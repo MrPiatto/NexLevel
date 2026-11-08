@@ -71,7 +71,7 @@ bool NexMenu::init() {
     auto* glow = kit::card({W + 6.f, H + 6.f}, 17.f, kit::rgba(kit::kViolet, .10f), kit::rgba(kit::kViolet, .0f), 0.f);
     m_mainLayer->addChildAtPosition(glow, Anchor::Center);
     glow->setZOrder(-12);
-    auto* panel = kit::card({W, H}, 14.f, kit::rgba(16, 18, 38, .97f), kit::rgba(kit::kViolet, .45f), 1.f);
+    auto* panel = kit::card({W, H}, 14.f, kit::rgba(16, 18, 38, .97f), kit::rgba(kit::kViolet, .5f), .7f);
     m_mainLayer->addChildAtPosition(panel, Anchor::Center);
     panel->setZOrder(-10);
 
@@ -350,8 +350,8 @@ void NexMenu::updateLive() {
     if (m_status) m_status->setColor(dot);
     if (m_statusDot) {
         m_statusDot->clear();
-        m_statusDot->drawDot({0, 0}, 3.f, kit::rgba(dot, 1.f));
-        m_statusDot->drawDot({0, 0}, 5.f, kit::rgba(dot, .2f));
+        kit::fillCircle(m_statusDot, {0, 0}, 5.f, kit::rgba(dot, .2f));
+        kit::fillCircle(m_statusDot, {0, 0}, 3.f, kit::rgba(dot, 1.f));
     }
 
     // Room tab.

@@ -22,6 +22,9 @@ inline const cocos2d::ccColor3B kWarn{255, 200, 80};
 cocos2d::ccColor4F rgba(cocos2d::ccColor3B c, float a = 1.f);
 cocos2d::ccColor4F rgba(int r, int g, int b, float a = 1.f);
 
+// Filled circle as a polygon (CCDrawNode::drawDot renders as a square in GD).
+void fillCircle(cocos2d::CCDrawNode* draw, cocos2d::CCPoint centre, float radius, cocos2d::ccColor4F color);
+
 // Rounded rectangle polygon (w x h, origin bottom-left).
 std::vector<cocos2d::CCPoint> roundedRectPoints(float w, float h, float r, int stepsPerCorner = 6);
 

@@ -30,20 +30,68 @@ float cornerInset(float x, float w, float r) {
     return r - std::sqrt(std::max(0.f, r * r - d * d));
 }
 
-// Fill a rounded rect with a left-to-right gradient as thin vertical slices (no stencil needed).
+std::vector<CCPoint> dedupe(std::vector<CCPoint> pts) {
+    // Coincident consecutive points (e.g. a pill whose corner centres meet) make cocos2d's
+    // anti-aliased polygon extrusion shoot out spikes: drop them.
+    std::vector<CCPoint> out;
+    for (auto& p : pts) {
+        if (!out.empty() && std::fabs(out.back().x - p.x) < .01f && std::fabs(out.back().y - p.y) < .01f) continue;
+        out.push_back(p);
+    }
+    while (out.size() > 2 && std::fabs(out.front().x - out.back().x) < .01f && std::fabs(out.front().y - out.back().y) < .01f) out.pop_back();
+    return out;
+}
+
+void arc(std::vector<CCPoint>& pts, CCPoint c, float r, float a0, float a1, int steps) {
+    for (int i = 0; i <= steps; ++i) {
+        const float a = a0 + (a1 - a0) * static_cast<float>(i) / static_cast<float>(steps);
+        pts.push_back({c.x + std::cos(a) * r, c.y + std::sin(a) * r});
+    }
+}
+
+ccColor4F lerp(ccColor3B a, ccColor3B b, float t, float alpha) {
+    return {(a.r + (b.r - a.r) * t) / 255.f, (a.g + (b.g - a.g) * t) / 255.f, (a.b + (b.b - a.b) * t) / 255.f, alpha};
+}
+
+// Fill a rounded rect with a left-to-right gradient: the two rounded ends are solid convex
+// polygons, the straight middle is cut into rectangles (no thin slivers, so no spikes).
 void drawGradientRoundedRect(CCDrawNode* draw, float w, float h, float r, ccColor3B from, ccColor3B to, float alpha) {
     r = std::min(r, std::min(w, h) / 2.f);
-    const int strips = std::max(12, static_cast<int>(w / 3.f));
+    const ccColor4F none{0, 0, 0, 0};
+    const float ov = .4f;  // overlap between pieces hides seams
+    const float tl = r / w * .5f, tr = 1.f - tl;
+    std::vector<CCPoint> left{{r + ov, 0.f}};
+    arc(left, {r, r}, r, -kPi / 2.f, -kPi, 8);
+    arc(left, {r, h - r}, r, kPi, kPi / 2.f, 8);
+    left.push_back({r + ov, h});
+    left = dedupe(left);
+    draw->drawPolygon(left.data(), static_cast<unsigned int>(left.size()), lerp(from, to, tl, alpha), 0.f, none);
+    std::vector<CCPoint> right{{w - r - ov, h}};
+    arc(right, {w - r, h - r}, r, kPi / 2.f, 0.f, 8);
+    arc(right, {w - r, r}, r, 0.f, -kPi / 2.f, 8);
+    right.push_back({w - r - ov, 0.f});
+    right = dedupe(right);
+    draw->drawPolygon(right.data(), static_cast<unsigned int>(right.size()), lerp(from, to, tr, alpha), 0.f, none);
+    const float mw = w - 2.f * r;
+    if (mw <= 0.f) return;
+    const int strips = std::max(4, static_cast<int>(mw / 4.f));
     for (int i = 0; i < strips; ++i) {
-        const float xa = w * static_cast<float>(i) / static_cast<float>(strips);
-        const float xb = std::min(w, w * static_cast<float>(i + 1) / static_cast<float>(strips) + .35f);  // overlap hides seams
-        const float t = (static_cast<float>(i) + .5f) / static_cast<float>(strips);
-        ccColor4F c{(from.r + (to.r - from.r) * t) / 255.f, (from.g + (to.g - from.g) * t) / 255.f,
-                    (from.b + (to.b - from.b) * t) / 255.f, alpha};
-        const float ia = cornerInset(xa, w, r), ib = cornerInset(xb, w, r);
-        CCPoint quad[4] = {{xa, ia}, {xb, ib}, {xb, h - ib}, {xa, h - ia}};
-        draw->drawPolygon(quad, 4, c, 0.f, ccColor4F{0, 0, 0, 0});
+        const float xa = r + mw * static_cast<float>(i) / static_cast<float>(strips);
+        const float xb = std::min(w - r + ov, r + mw * static_cast<float>(i + 1) / static_cast<float>(strips) + ov);
+        const float t = tl + (tr - tl) * (static_cast<float>(i) + .5f) / static_cast<float>(strips);
+        CCPoint quad[4] = {{xa, 0.f}, {xb, 0.f}, {xb, h}, {xa, h}};
+        draw->drawPolygon(quad, 4, lerp(from, to, t, alpha), 0.f, none);
     }
+}
+
+std::vector<CCPoint> circlePoints(CCPoint c, float r) {
+    std::vector<CCPoint> pts;
+    const int n = std::clamp(static_cast<int>(r * 3.f), 16, 48);
+    for (int i = 0; i < n; ++i) {
+        const float a = 2.f * kPi * static_cast<float>(i) / static_cast<float>(n);
+        pts.push_back({c.x + std::cos(a) * r, c.y + std::sin(a) * r});
+    }
+    return pts;
 }
 
 CCNode* sized(CCSize size) {
@@ -53,6 +101,12 @@ CCNode* sized(CCSize size) {
     return n;
 }
 } // namespace
+
+void fillCircle(CCDrawNode* draw, CCPoint centre, float radius, ccColor4F color) {
+    if (radius <= 0.f) return;
+    auto pts = circlePoints(centre, radius);
+    draw->drawPolygon(pts.data(), static_cast<unsigned int>(pts.size()), color, 0.f, ccColor4F{0, 0, 0, 0});
+}
 
 ccColor4F rgba(ccColor3B c, float a) { return {c.r / 255.f, c.g / 255.f, c.b / 255.f, a}; }
 ccColor4F rgba(int r, int g, int b, float a) { return {r / 255.f, g / 255.f, b / 255.f, a}; }
@@ -68,7 +122,7 @@ std::vector<CCPoint> roundedRectPoints(float w, float h, float r, int steps) {
             pts.push_back({centres[c].x + std::cos(a) * r, centres[c].y + std::sin(a) * r});
         }
     }
-    return pts;
+    return dedupe(std::move(pts));
 }
 
 CCNode* card(CCSize size, float radius, ccColor4F fill, ccColor4F border, float borderWidth) {
@@ -84,6 +138,9 @@ CCNode* gradientPill(CCSize size, float radius, ccColor3B from, ccColor3B to, GL
     auto* node = sized(size);
     auto* draw = CCDrawNode::create();
     drawGradientRoundedRect(draw, size.width, size.height, radius, from, to, opacity / 255.f);
+    // Thin light outline, like glass buttons.
+    auto pts = roundedRectPoints(size.width, size.height, radius, 8);
+    draw->drawPolygon(pts.data(), static_cast<unsigned int>(pts.size()), ccColor4F{0, 0, 0, 0}, .45f, rgba(255, 255, 255, .35f));
     node->addChild(draw);
     return node;
 }
@@ -136,9 +193,9 @@ CCNode* chip(const std::string& caption, ccColor3B color, float fontSize) {
 CCNode* avatar(const std::string& name, ccColor3B color, float radius) {
     auto* node = sized({radius * 2.f, radius * 2.f});
     auto* draw = CCDrawNode::create();
-    draw->drawDot({radius, radius}, radius, rgba(color, .25f));
-    draw->drawDot({radius, radius}, radius - 1.2f, rgba(18, 20, 40, 1.f));
-    draw->drawDot({radius, radius}, radius - 2.2f, rgba(color, .35f));
+    fillCircle(draw, {radius, radius}, radius, rgba(color, .25f));
+    fillCircle(draw, {radius, radius}, radius - 1.2f, rgba(18, 20, 40, 1.f));
+    fillCircle(draw, {radius, radius}, radius - 2.2f, rgba(color, .35f));
     node->addChild(draw);
     std::string initial = name.empty() ? "?" : name.substr(0, 1);
     for (auto& ch : initial) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
@@ -178,7 +235,7 @@ void Toggle::setOn(bool on) {
         m_draw->drawPolygon(pts.data(), static_cast<unsigned int>(pts.size()), rgba(60, 64, 100, 1.f), .6f, rgba(kMuted, .4f));
     }
     const float knobX = on ? w - r : r;
-    m_draw->drawDot({knobX, r}, r - 2.f, rgba(245, 246, 255, 1.f));
+    fillCircle(m_draw, {knobX, r}, r - 2.f, rgba(245, 246, 255, 1.f));
 }
 
 // ---------- Gauge ----------
@@ -211,8 +268,8 @@ void Gauge::setValue(float v, ccColor3B color, const std::string& centre, const 
     v = std::clamp(v, 0.f, 1.f);
     m_draw->clear();
     const CCPoint c{m_radius, m_radius};
-    m_draw->drawDot(c, m_radius, rgba(40, 46, 80, .55f));
-    m_draw->drawDot(c, m_radius - 6.f, rgba(16, 18, 36, 1.f));
+    fillCircle(m_draw, c, m_radius, rgba(40, 46, 80, .55f));
+    fillCircle(m_draw, c, m_radius - 6.f, rgba(16, 18, 36, 1.f));
     const float ringR = m_radius - 3.f;
     const int segs = 64;
     // Track, then the value arc clockwise from the top.
@@ -232,8 +289,8 @@ void Gauge::setValue(float v, ccColor3B color, const std::string& centre, const 
     }
     if (filled > 0) {  // knob at the end of the arc
         const float a = kPi / 2.f - 2.f * kPi * v;
-        m_draw->drawDot({c.x + std::cos(a) * ringR, c.y + std::sin(a) * ringR}, 3.6f, rgba(color, 1.f));
-        m_draw->drawDot({c.x + std::cos(a) * ringR, c.y + std::sin(a) * ringR}, 1.6f, rgba(255, 255, 255, 1.f));
+        fillCircle(m_draw, {c.x + std::cos(a) * ringR, c.y + std::sin(a) * ringR}, 3.6f, rgba(color, 1.f));
+        fillCircle(m_draw, {c.x + std::cos(a) * ringR, c.y + std::sin(a) * ringR}, 1.6f, rgba(255, 255, 255, 1.f));
     }
     setTextIfChanged(m_centre, centre);
     setTextIfChanged(m_caption, caption);
@@ -301,7 +358,7 @@ void Chart::setData(const std::vector<float>& values, float minTop) {
         m_draw->drawSegment(a, b, .8f, rgba(170, 230, 255, 1.f));
     }
     const CCPoint last{x0 + step * static_cast<float>(values.size() - 1), yOf(values.back())};
-    m_draw->drawDot(last, 2.4f, rgba(kTeal, 1.f));
+    fillCircle(m_draw, last, 2.4f, rgba(kTeal, 1.f));
 }
 
 // ---------- Meter ----------
