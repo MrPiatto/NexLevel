@@ -6,7 +6,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$Server,
     [string]$User = 'ubuntu',
-    [string]$Key
+    [string]$Key,
+    [switch]$BehindTunnel   # server without public IP, reached through playit.gg
 )
 $ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
@@ -24,6 +25,6 @@ scp @sshArgs $pkg "${User}@${Server}:nexlevel-relay.tar"
 if ($LASTEXITCODE) { throw "upload failed - check the address, the user name and the key" }
 
 Write-Host "Building and starting the relay on the server (takes a few minutes the first time)..."
-ssh -t @sshArgs "${User}@${Server}" "rm -rf ~/nexlevel && mkdir -p ~/nexlevel && tar -xf ~/nexlevel-relay.tar -C ~/nexlevel && bash ~/nexlevel/deploy/relay/install.sh"
+ssh -t @sshArgs "${User}@${Server}" "rm -rf ~/nexlevel && mkdir -p ~/nexlevel && tar -xf ~/nexlevel-relay.tar -C ~/nexlevel && bash ~/nexlevel/deploy/relay/install.sh$(if ($BehindTunnel) { ' --behind-tunnel' })"
 if ($LASTEXITCODE) { throw "install on the server failed - see the messages above" }
 Write-Host "Done. Set the mod setting 'Relay server' to $Server" -ForegroundColor Green

@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Builds and installs the NexLevel relay on a Debian/Ubuntu server (x86 or ARM) and starts it
 # as a service on TCP port 47800. Run from the uploaded folder: bash deploy/relay/install.sh
+#   --behind-tunnel   the server is reached through a tunnel such as playit.gg (no public IP needed)
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+EXTRA_ARGS=""
+if [[ "${1:-}" == "--behind-tunnel" ]]; then EXTRA_ARGS=" --behind-tunnel"; fi
 
 echo "== installing build tools"
 sudo apt-get update -y
@@ -14,7 +17,7 @@ cmake --build build/relay --target nexlevel_relay
 
 echo "== installing the service"
 sudo install -m 755 build/relay/nexlevel_relay /usr/local/bin/nexlevel_relay
-sudo cp deploy/relay/nexlevel-relay.service /etc/systemd/system/nexlevel-relay.service
+sed "s|--port 47800|--port 47800${EXTRA_ARGS}|" deploy/relay/nexlevel-relay.service | sudo tee /etc/systemd/system/nexlevel-relay.service >/dev/null
 sudo systemctl daemon-reload
 sudo systemctl enable nexlevel-relay
 sudo systemctl restart nexlevel-relay
