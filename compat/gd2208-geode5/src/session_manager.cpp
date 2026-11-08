@@ -3,6 +3,7 @@
 #include <nexlevel/core/net/local_address.hpp>
 #include <nexlevel/core/relay/protocol.hpp>
 #include <nexlevel/core/session/room_code.hpp>
+#include <nexlevel/core/sync/level_settings.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -93,6 +94,7 @@ bool SessionManager::hostRoom(std::string* error) {
         log::info("NexLevel: opening the room on relay {}:{}", r->first, r->second);
     }
     m_roomLevel = m_editor->level();
+    m_roomStarted = std::chrono::steady_clock::now();
     if (m_roomLevel) m_roomLevel->retain();
     ensureScheduled();
     m_editor->seedSession();
@@ -114,6 +116,7 @@ bool SessionManager::join(const std::string& roomCode, std::string* error) {
     m_client->setAccountId(static_cast<std::uint32_t>(std::max(0, GJAccountManager::sharedState()->m_accountID)));
     m_lastClientState = session::ClientState::Idle;
     m_lastJoined = false;
+    m_roomStarted = std::chrono::steady_clock::now();
     m_client->connectCode(roomCode);
     ensureScheduled();
     log::info("NexLevel: joining room {}", roomCode);
@@ -234,6 +237,19 @@ SessionManager::ConnectionInfo SessionManager::connectionInfo() const {
         }
     }
     return info;
+}
+
+int SessionManager::roomSeconds() const {
+    if (role() == Role::None) return 0;
+    return static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - m_roomStarted).count());
+}
+
+std::size_t SessionManager::objectCount() const {
+    auto* v = view();
+    if (!v) return 0;
+    std::size_t n = v->objects().size();
+    if (v->find(sync::kLevelSettingsId)) --n;  // the settings entry is not an object
+    return n;
 }
 
 void SessionManager::releaseMapper() {

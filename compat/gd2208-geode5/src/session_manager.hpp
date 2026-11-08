@@ -9,6 +9,7 @@
 #include <nexlevel/core/session/host.hpp>
 #include <nexlevel/core/net/upnp.hpp>
 
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -69,6 +70,8 @@ public:
         std::string pingSubject;   // whose ping `ping` is
     };
     ConnectionInfo connectionInfo() const;
+    int roomSeconds() const;          // since the room was opened / joined
+    std::size_t objectCount() const;  // objects in the shared level
 
     // Editor plumbing.
     void attachEditor(IEditorBridge* bridge);
@@ -92,6 +95,7 @@ private:
     GJGameLevel* m_roomLevel = nullptr;  // retained while the room is open
     bool m_scheduled = false;
     bool m_lastJoined = false;
+    std::chrono::steady_clock::time_point m_roomStarted{};
     std::vector<session::PeerInfo> m_lastPeers;
 };
 

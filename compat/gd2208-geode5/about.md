@@ -6,8 +6,8 @@ Build Geometry Dash levels with your friends in real time, in the same editor.
 
 ## How to play
 1. Open a level in the editor and press **Esc**.
-2. Press **Collab**, then **Host room**. Copy the code and send it to your friends.
-3. Your friends open any level in the editor, press **Esc**, **Collab**, paste the code and press **Join**.
+2. Press **NexLevel Collab**, then **Host room**. Copy the code and send it to your friends.
+3. Your friends open any level in the editor, press **Esc**, **NexLevel Collab**, paste the code and press **Join**.
 
 No IP addresses, no router settings.
 
@@ -16,10 +16,13 @@ No IP addresses, no router settings.
 - **Level settings:** colour channels, background, ground, fonts, start options, guidelines and the song.
 - **Everyone's view:** a coloured frame with each player's name shows where they are working.
 
+## The NexLevel menu
+One modern panel with four tabs: **Room** (code, players, objects, uptime), **Players** (ping bars, profiles, kick), **Network** (internet quality gauge, live ping chart, connection details) and **Settings**.
+
 ## Connection
-- Each player's ping is listed in the Collab menu, with a button to open their GD profile.
+- Each player's ping is listed in the Players tab, with a button to open their GD profile.
 - Your own ping is shown in the editor. You can turn it off in the mod settings.
-- **Info** shows how you are connected, your IP (hidden until you tap Show), the port and your internet quality: Demon, Insane, High, Normal or Bad. A live ping graph covers the last minute.
+- **Network** shows how you are connected, your IP (hidden until you tap Show), the port and your internet quality: Demon, Insane, High, Normal or Bad. A live ping graph covers the last minute.
 
 ## Rooms
 - Up to 16 players.

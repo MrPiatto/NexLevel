@@ -24,6 +24,12 @@
 			"name": "Show ping in the editor",
 			"description": "Shows your ping to the room in the editor while you are in a room.",
 			"default": true
+		},
+		"show-frames": {
+			"type": "bool",
+			"name": "Show other players' view",
+			"description": "Draws a coloured frame with each player's name where they are working in the editor.",
+			"default": true
 		}
 	},
 	"tags": [

@@ -106,6 +106,7 @@ void updatePresence(LevelEditorLayer* layer, bool paused) {
         if (overlay) overlay->removeFromParent();
         return;
     }
+    const bool showFrames = Mod::get()->getSettingValue<bool>("show-frames");
     const float zoom = objectLayer->getScale();
     if (!paused) {
         const auto win = CCDirector::sharedDirector()->getWinSize();
@@ -118,8 +119,8 @@ void updatePresence(LevelEditorLayer* layer, bool paused) {
         overlay->setTag(kOverlayTag);
         objectLayer->addChild(overlay, 10000);
     }
-    overlay->setVisible(!paused);
-    if (!paused) overlay->redraw(zoom > 0.01f ? zoom : 1.f);
+    overlay->setVisible(!paused && showFrames);
+    if (!paused && showFrames) overlay->redraw(zoom > 0.01f ? zoom : 1.f);
 }
 
 } // namespace nexlevel::mod
