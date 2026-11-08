@@ -86,6 +86,8 @@ public:
 
     void onRemoved(GameObject* o) {
         if (!o || ignoring() || !m_armed) return;
+        // removeObject and the end-of-frame section check can both report the same removal.
+        if (!m_removedThisFrame.insert(o).second) return;
         if (m_removedLogged++ < kMaxLogLinesPerKind) {
             log::info("NexLevel diff: removed uid={} id={}", o->m_uniqueID, o->m_objectID);
         }
@@ -141,6 +143,7 @@ public:
         flushSummary("removed", m_removedLogged);
         m_createdLogged = m_removedLogged = 0;
         m_dirty.clear();
+        m_removedThisFrame.clear();
 
         // Remote changes held back while the local user had the object selected.
         if (!m_deferred.empty() && !m_paused) {
@@ -324,6 +327,7 @@ private:
     std::unordered_map<nls::NetId, GameObject*, nls::NetIdHash> m_idToObj;
     std::unordered_set<GameObject*> m_dirty;
     std::unordered_set<GameObject*> m_pendingRemoval;
+    std::unordered_set<GameObject*> m_removedThisFrame;
     std::unordered_set<nls::NetId, nls::NetIdHash> m_deferred;
     std::size_t m_createdLogged = 0, m_removedLogged = 0;
     bool m_paused = false;
