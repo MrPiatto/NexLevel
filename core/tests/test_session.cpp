@@ -3,6 +3,7 @@
 
 #include <nexlevel/core/session/client.hpp>
 #include <nexlevel/core/session/host.hpp>
+#include <nexlevel/core/net/local_address.hpp>
 
 #include <chrono>
 #include <functional>
@@ -10,6 +11,7 @@
 #include <random>
 #include <thread>
 #include <vector>
+#include <algorithm>
 
 using namespace nexlevel;
 using namespace nexlevel::session;
@@ -79,6 +81,12 @@ void testLoopbackSession() {
     }
     CHECK(host.peers().size() == 4);
     for (auto& c : clients) CHECK(c->replica()->view().objects().size() == 5);
+    bool rosterSeen = waitUntil(pumpAll, [&] {
+        for (auto& c : clients) if (c->peers().size() != 4) return false;
+        return true;
+    }, 5000);
+    CHECK(rosterSeen);
+    CHECK(clients[0]->peers().front().id == SessionHost::kHostPeer && clients[0]->peers().front().name == "Host");
 
     // Concurrent random editing by everyone.
     std::mt19937 rng(1234);
@@ -114,17 +122,36 @@ void testLoopbackSession() {
     CHECK(other.hostTarget() == GameTarget::GD2208);
     CHECK(host.peers().size() == 4);
 
-    // A client leaving is noticed by the host.
+    // A client leaving is noticed by the host and by everyone's roster.
     clients.pop_back();
-    bool left = waitUntil(pumpAll, [&] { return host.peers().size() == 3; }, 5000);
-    CHECK(left);
-
-    host.stop();
-    bool dropped = waitUntil(pumpAll, [&] {
-        for (auto& c : clients) if (c->state() != ClientState::Disconnected) return false;
+    bool left = waitUntil(pumpAll, [&] {
+        if (host.peers().size() != 3) return false;
+        for (auto& c : clients) if (c->peers().size() != 3) return false;
         return true;
     }, 5000);
-    CHECK(dropped);
+    CHECK(left);
+
+    // Host kicks a player.
+    auto victim = *clients[0]->peerId();
+    CHECK(host.kick(victim));
+    CHECK(!host.kick(victim));
+    bool kicked = waitUntil(pumpAll, [&] {
+        return clients[0]->state() == ClientState::Kicked && clients[1]->peers().size() == 2;
+    }, 5000);
+    CHECK(kicked);
+    CHECK(host.peers().size() == 2);
+
+    // The room keeps working without the kicked player.
+    clients[1]->submitLocal(Op::create(*clients[1]->newId(), PropMap{{1, "1"}, {2, "0"}, {3, "0"}}));
+    bool stillWorks = waitUntil(pumpAll, [&] {
+        return clients[1]->replica()->pending().empty() && clients[1]->replica()->confirmed().fingerprint() == host.state().fingerprint();
+    }, 5000);
+    CHECK(stillWorks);
+
+    // Host closes the room: remaining players are told it was closed (not a network error).
+    host.stop();
+    bool closed = waitUntil(pumpAll, [&] { return clients[1]->state() == ClientState::RoomClosed; }, 5000);
+    CHECK(closed);
 }
 
 void testConnectFailure() {
@@ -137,7 +164,15 @@ void testConnectFailure() {
 
 } // namespace
 
+void testLocalAddress() {
+    auto ip = net::primaryLocalIPv4();
+    // Offline CI machines may legitimately have no route; when present it must look like a dotted quad.
+    if (ip) CHECK(std::count(ip->begin(), ip->end(), '.') == 3);
+    std::printf("  primary LAN IPv4: %s\n", ip ? ip->c_str() : "(none)");
+}
+
 void runSessionTests() {
+    testLocalAddress();
     testLoopbackSession();
     testConnectFailure();
 }

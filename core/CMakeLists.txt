@@ -34,6 +34,7 @@ add_library(nexlevel_core STATIC
     src/bytes.cpp
     src/frame.cpp
     src/net/loopback_probe.cpp
+    src/net/local_address.cpp
     src/sync/object_props.cpp
     src/sync/op.cpp
     src/sync/replica.cpp

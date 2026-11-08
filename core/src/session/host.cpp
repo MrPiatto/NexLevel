@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <future>
+#include <thread>
 #include <map>
 #include <unordered_map>
 
@@ -71,7 +72,7 @@ struct SessionHost::Impl {
         net.post([this, conn, closeAfter, bytes = std::move(bytes)]() mutable {
             auto it = conns.find(conn);
             if (it == conns.end()) return;
-            if (closeAfter) it->second->sendAndClose(std::move(bytes), "refused");
+            if (closeAfter) it->second->sendAndClose(std::move(bytes), "closed by host");
             else it->second->send(std::move(bytes));
         });
     }
@@ -87,6 +88,20 @@ struct SessionHost::Impl {
             if (p.joined) sendTo(conn, MsgType::Sequenced, payload);
         }
     }
+    std::vector<PeerInfo> roster() const {
+        std::vector<PeerInfo> out{{kHostPeer, hostName}};
+        for (auto& [_, p] : peers) {
+            if (p.joined) out.push_back({p.id, p.name});
+        }
+        return out;
+    }
+    void broadcastRoster() {
+        auto payload = encode(Roster{roster()});
+        for (auto& [conn, p] : peers) {
+            if (p.joined) sendTo(conn, MsgType::Roster, payload);
+        }
+    }
+
     std::size_t joinedCount() const {
         std::size_t n = 0;
         for (auto& [_, p] : peers) n += p.joined ? 1 : 0;
@@ -113,6 +128,7 @@ struct SessionHost::Impl {
             p.name = hello->displayName;
             p.joined = true;
             sendTo(conn, MsgType::Welcome, encode(Welcome{p.id, sequencer.opsSince(0)}));
+            broadcastRoster();
             return;
         }
         if (type != MsgType::Submit) {
@@ -166,6 +182,11 @@ std::optional<std::uint16_t> SessionHost::start(std::uint16_t port, bool loopbac
 void SessionHost::stop() {
     if (!m || !m->running) return;
     m->running = false;
+    // Tell everyone the room is closing, give the notices a moment to flush.
+    for (auto& [conn, p] : m->peers) {
+        if (p.joined) m->sendTo(conn, MsgType::Closing, {}, true);
+    }
+    if (!m->peers.empty()) std::this_thread::sleep_for(std::chrono::milliseconds(100));
     std::promise<void> done;
     auto fut = done.get_future();
     m->net.post([this, &done] {
@@ -188,7 +209,13 @@ std::vector<sync::NetId> SessionHost::pump() {
     for (auto& e : m->events.drain()) {
         switch (e.kind) {
             case Impl::Event::Connected: m->peers[e.conn] = {}; break;
-            case Impl::Event::Closed: m->peers.erase(e.conn); break;
+            case Impl::Event::Closed: {
+                auto it = m->peers.find(e.conn);
+                bool wasJoined = it != m->peers.end() && it->second.joined;
+                m->peers.erase(e.conn);
+                if (wasJoined) m->broadcastRoster();
+                break;
+            }
             case Impl::Event::FrameIn: {
                 auto it = m->peers.find(e.conn);
                 if (it != m->peers.end()) m->handleFrame(e.conn, it->second, e.frame, changed);
@@ -211,12 +238,18 @@ sync::Op SessionHost::submitLocal(sync::Op op) {
 sync::NetId SessionHost::newId() { return m->ids.next(); }
 const sync::Replica& SessionHost::state() const noexcept { return m->sequencer.state(); }
 
-std::vector<PeerInfo> SessionHost::peers() const {
-    std::vector<PeerInfo> out{{kHostPeer, m->hostName}};
-    for (auto& [_, p] : m->peers) {
-        if (p.joined) out.push_back({p.id, p.name});
+std::vector<PeerInfo> SessionHost::peers() const { return m->roster(); }
+
+bool SessionHost::kick(sync::PeerId peer) {
+    for (auto it = m->peers.begin(); it != m->peers.end(); ++it) {
+        if (it->second.joined && it->second.id == peer) {
+            m->sendTo(it->first, MsgType::Kicked, {}, true);
+            m->peers.erase(it);
+            m->broadcastRoster();
+            return true;
+        }
     }
-    return out;
+    return false;
 }
 
 } // namespace nexlevel::session

@@ -27,6 +27,15 @@ std::vector<std::uint8_t> encode(const Rejected& m) {
     w.u8(m.reason);
     return w.take();
 }
+std::vector<std::uint8_t> encode(const Roster& m) {
+    ByteWriter w;
+    w.u16(static_cast<std::uint16_t>(m.peers.size()));
+    for (const auto& p : m.peers) {
+        w.u16(p.id);
+        w.str(p.name.substr(0, kMaxDisplayName));
+    }
+    return w.take();
+}
 std::vector<std::uint8_t> encodeOpMsg(const sync::Op& op) {
     ByteWriter w;
     sync::encodeOp(w, op);
@@ -69,6 +78,21 @@ std::optional<Rejected> decodeRejected(std::span<const std::uint8_t> p) {
     Rejected m;
     m.clientSeq = r.u32();
     m.reason = r.u8();
+    if (!r.atEnd()) return std::nullopt;
+    return m;
+}
+std::optional<Roster> decodeRoster(std::span<const std::uint8_t> p) {
+    ByteReader r(p);
+    Roster m;
+    auto n = r.u16();
+    if (!r.ok() || n > kMaxRosterPeers) return std::nullopt;
+    for (std::uint16_t i = 0; i < n; ++i) {
+        PeerInfo pi;
+        pi.id = r.u16();
+        pi.name = r.str(kMaxDisplayName);
+        if (!r.ok()) return std::nullopt;
+        m.peers.push_back(std::move(pi));
+    }
     if (!r.atEnd()) return std::nullopt;
     return m;
 }

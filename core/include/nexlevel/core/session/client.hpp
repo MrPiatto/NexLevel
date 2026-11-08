@@ -11,7 +11,7 @@
 
 namespace nexlevel::session {
 
-enum class ClientState : std::uint8_t { Idle, Connecting, Joining, Joined, Refused, Disconnected };
+enum class ClientState : std::uint8_t { Idle, Connecting, Joining, Joined, Refused, Kicked, RoomClosed, Disconnected };
 
 class SessionClient {
 public:
@@ -35,6 +35,8 @@ public:
     std::optional<RefuseReason> refuseReason() const noexcept;
     std::optional<GameTarget> hostTarget() const noexcept;  // set when refused for a version mismatch
     const sync::ClientReplica* replica() const noexcept;
+    const std::vector<PeerInfo>& peers() const noexcept;  // host first; empty until joined
+    std::optional<sync::PeerId> peerId() const noexcept;
 
 private:
     struct Impl;

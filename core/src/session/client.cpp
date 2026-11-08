@@ -32,6 +32,7 @@ struct SessionClient::Impl {
     std::optional<GameTarget> hostTarget;
     std::optional<sync::ClientReplica> replica;
     std::optional<sync::NetIdAllocator> ids;
+    std::vector<PeerInfo> peers;
 
     Impl(GameTarget t, std::string n) : target(t), name(std::move(n)) {}
 
@@ -104,7 +105,7 @@ std::vector<sync::NetId> SessionClient::pump() {
                 m->error = e.reason;
                 break;
             case Impl::Event::Closed:
-                if (m->state != ClientState::Refused) {
+                if (m->state != ClientState::Refused && m->state != ClientState::Kicked && m->state != ClientState::RoomClosed) {
                     m->state = ClientState::Disconnected;
                     m->error = e.reason;
                 }
@@ -126,6 +127,14 @@ std::vector<sync::NetId> SessionClient::pump() {
                     m->state = ClientState::Refused;
                     m->refuse = r ? std::optional(r->reason) : std::nullopt;
                     m->hostTarget = r ? std::optional(r->hostTarget) : std::nullopt;
+                } else if (type == MsgType::Roster) {
+                    if (auto r = decodeRoster(e.frame.payload)) m->peers = std::move(r->peers);
+                } else if (type == MsgType::Kicked) {
+                    m->state = ClientState::Kicked;
+                    m->peers.clear();
+                } else if (type == MsgType::Closing) {
+                    m->state = ClientState::RoomClosed;
+                    m->peers.clear();
                 } else if (m->state == ClientState::Joined && type == MsgType::Sequenced) {
                     auto op = decodeOpMsg(e.frame.payload);
                     if (!op) { m->error = "malformed op from host"; disconnect(); break; }
@@ -161,6 +170,11 @@ ClientState SessionClient::state() const noexcept { return m->state; }
 const std::string& SessionClient::lastError() const noexcept { return m->error; }
 std::optional<RefuseReason> SessionClient::refuseReason() const noexcept { return m->refuse; }
 std::optional<GameTarget> SessionClient::hostTarget() const noexcept { return m->hostTarget; }
+const std::vector<PeerInfo>& SessionClient::peers() const noexcept { return m->peers; }
+std::optional<sync::PeerId> SessionClient::peerId() const noexcept {
+    if (!m->replica) return std::nullopt;
+    return m->replica->self();
+}
 const sync::ClientReplica* SessionClient::replica() const noexcept { return m->replica ? &*m->replica : nullptr; }
 
 } // namespace nexlevel::session

@@ -12,11 +12,6 @@
 
 namespace nexlevel::session {
 
-struct PeerInfo {
-    sync::PeerId id = 0;
-    std::string name;
-};
-
 class SessionHost {
 public:
     static constexpr sync::PeerId kHostPeer = 1;
@@ -30,6 +25,7 @@ public:
     // Listen on port (0 = any free port). loopbackOnly binds 127.0.0.1 (tests, local play).
     // Returns the bound port, or nullopt with *error set.
     std::optional<std::uint16_t> start(std::uint16_t port, bool loopbackOnly, std::string* error = nullptr);
+    // Closes the room: every player gets a Closing notice, then the server shuts down.
     void stop();
     bool running() const noexcept;
     std::uint16_t port() const noexcept;
@@ -42,7 +38,10 @@ public:
     sync::NetId newId();
 
     const sync::Replica& state() const noexcept;
-    std::vector<PeerInfo> peers() const;
+    std::vector<PeerInfo> peers() const;  // host first
+
+    // Remove a player: they get a Kicked notice and are disconnected. Returns false if not found.
+    bool kick(sync::PeerId peer);
 
 private:
     struct Impl;
