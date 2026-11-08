@@ -5,11 +5,11 @@
 #include <nexlevel/core/sync/object_props.hpp>
 #include <nexlevel/core/version.hpp>
 
-#include <cstdio>
+#include "harness.hpp"
+
 #include <string>
 
-static int g_failed = 0, g_checks = 0;
-#define CHECK(cond) do { ++g_checks; if (!(cond)) { ++g_failed; std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); } } while (0)
+void runSyncTests();
 
 using namespace nexlevel;
 
@@ -155,6 +155,7 @@ int main() {
     testParseSaveString();
     testDiffProps();
     testLoopbackProbe();
-    std::printf("%d checks, %d failed\n", g_checks, g_failed);
-    return g_failed == 0 ? 0 : 1;
+    runSyncTests();
+    std::printf("%d checks, %d failed\n", nltest::checks, nltest::failed);
+    return nltest::failed == 0 ? 0 : 1;
 }

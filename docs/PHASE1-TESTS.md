@@ -14,6 +14,8 @@
 | 2026-11-08 | Editor: playtest | PASS | no diffs while playtesting |
 | 2026-11-08 | Editor: colour change via Edit Object | NOT SEEN | no `21=`/`22=` diff in two runs; to confirm the action was performed |
 
+| 2026-11-08 | Core sync engine (Linux, ASan/UBSan) | PASS | 107 checks: NetIds, op wire format incl. hostile input, replica rules, host sequencing/dedupe/forged ids, optimistic client view, 40 randomized 2-6 peer convergence runs |
+
 ## Findings
 - `GameObject::m_uniqueID` is not a stable identity: after undo/redo the same object was logged as uid 3941 when re-added and uid 3942 when removed again. Confirms the design decision to use NexLevel NetIDs.
 - `EditorUI::deleteObject` and `LevelEditorLayer::undoLastAction/redoLastAction` are inline on Windows (also noted by ZyyeDev/MultiplayerEditor).

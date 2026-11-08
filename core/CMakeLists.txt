@@ -35,6 +35,10 @@ add_library(nexlevel_core STATIC
     src/frame.cpp
     src/net/loopback_probe.cpp
     src/sync/object_props.cpp
+    src/sync/op.cpp
+    src/sync/replica.cpp
+    src/sync/host_sequencer.cpp
+    src/sync/client_replica.cpp
 )
 target_include_directories(nexlevel_core PRIVATE ${NEXLEVEL_ASIO_INCLUDE})
 target_compile_definitions(nexlevel_core PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
@@ -52,7 +56,7 @@ set_target_properties(nexlevel_core PROPERTIES
 option(NEXLEVEL_BUILD_TESTS "Build nexlevel_core unit tests" ${PROJECT_IS_TOP_LEVEL})
 if(NEXLEVEL_BUILD_TESTS)
     enable_testing()
-    add_executable(nexlevel_core_tests tests/test_main.cpp)
+    add_executable(nexlevel_core_tests tests/test_main.cpp tests/test_sync.cpp)
     target_link_libraries(nexlevel_core_tests PRIVATE nexlevel_core)
     add_test(NAME nexlevel_core_tests COMMAND nexlevel_core_tests)
 endif()
