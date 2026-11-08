@@ -1,6 +1,6 @@
 # Runs the headless test player (built with the core tests). Examples:
-#   tools\bot.ps1 join 127.0.0.1        join the room you host in GD on this PC
-#   tools\bot.ps1 host                  open a room that GD can join at 127.0.0.1
+#   tools\bot.ps1 join <ROOM-CODE>      join the room you host in GD (copy the code from the Collab menu)
+#   tools\bot.ps1 host                  open a room and print its code for GD to join
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$BotArgs)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
