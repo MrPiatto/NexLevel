@@ -36,5 +36,5 @@ add_subdirectory($ENV{GEODE_SDK} ${CMAKE_CURRENT_BINARY_DIR}/geode)
 
 setup_geode_mod(${PROJECT_NAME})
 
-# Plain signature on purpose: must match setup_geode_mod's own target_link_libraries style (verify on first build).
+# Plain signature: setup_geode_mod links geode-sdk with an empty LINK_TYPE by default (verified in SDK cmake/GeodeFile.cmake for v4.10.2, v5.10.1, v6.0.0-alpha.1).
 target_link_libraries(${PROJECT_NAME} nexlevel_core)
