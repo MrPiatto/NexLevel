@@ -37,7 +37,10 @@ public:
     // Also make the room reachable through a Forg3 relay, which works from any network (mobile
     // data, CGNAT, strict NAT). Call after start(). Non-blocking; reconnects on its own and keeps
     // the same relay room id when it can. Players use relayRoomId() in the room code.
-    void startRelay(const std::string& relayHost, std::uint16_t relayPort);
+    // relayId: the relay's id in the directory (goes into the room code; kCustomRelayId for a
+    // relay from the player's settings).
+    void startRelay(const std::string& relayHost, std::uint16_t relayPort, std::uint8_t relayId = 0);
+    std::uint8_t relayId() const noexcept;
     RelayState relayState() const noexcept;
     std::uint32_t relayRoomId() const noexcept;  // 0 until the relay assigned one
     std::string relayError() const;

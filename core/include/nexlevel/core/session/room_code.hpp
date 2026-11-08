@@ -5,7 +5,7 @@
 // Decoding ignores case, dashes and spaces, and accepts O->0, I/L->1 (Crockford aliases).
 // The room key is checked by the host at join, so knowing the address alone is not enough.
 //
-// Relay rooms use a 10-character code ("K7Q2M-9XA3P"): the room id on the relay plus the key.
+// Relay rooms use a 10-character code ("K7Q2M-9XA3P"): relay id, room id on that relay, key.
 //
 // Online rooms (router port opened automatically) use a 15-character code that also carries the
 // last byte of the host's LAN address ("lanOctet"): players on the host's own network then connect
@@ -19,6 +19,8 @@
 namespace nexlevel::session {
 
 inline constexpr std::uint16_t kRoomKeyMask = 0x7FF;  // 11 bits
+inline constexpr std::uint32_t kRelayRoomMask = 0x3FFFFFFF;  // 30 bits (relays allocate below this)
+inline constexpr std::uint8_t kCustomRelayId = 15;           // "the relay in my settings" 
 
 struct RoomAddress {
     std::array<std::uint8_t, 4> ipv4{};
@@ -28,6 +30,9 @@ struct RoomAddress {
     // Non-zero: room on the Forg3 relay (10-char code: relay room id + key; ipv4/port unused).
     // Works from any network, including mobile data / CGNAT.
     std::uint32_t relayRoom = 0;
+    // Which relay (0..15): an id from the relay directory, or kCustomRelayId for a relay the
+    // players configured themselves. Lets many relays run side by side (regions, load).
+    std::uint8_t relayId = 0;
 
     std::string ipString() const;
     bool operator==(const RoomAddress&) const = default;

@@ -176,7 +176,7 @@ int runHost(int seconds) {
         std::printf("[bot] UPnP: %s (%s) - only the same-network code works\n", toString(mapper.state()), mapper.lastError().c_str());
     }
     if (auto r = relayFromEnv()) {
-        host.startRelay(r->first, r->second);
+        host.startRelay(r->first, r->second, kCustomRelayId);
         auto until = Clock::now() + std::chrono::seconds(10);
         while (host.relayState() != RelayState::Ready && Clock::now() < until) {
             host.pump();
@@ -185,6 +185,7 @@ int runHost(int seconds) {
         if (host.relayState() == RelayState::Ready) {
             RoomAddress ra;
             ra.relayRoom = host.relayRoomId();
+            ra.relayId = host.relayId();
             ra.key = host.roomKey();
             std::printf("[bot] RELAY code (works from any network): %s\n", encodeRoomCode(ra).c_str());
         } else {

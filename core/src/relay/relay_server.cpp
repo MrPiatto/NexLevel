@@ -232,6 +232,12 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
         asio::async_read(*sock, asio::buffer(hs->header), [this, sock, slot, hs](std::error_code rec, std::size_t) {
             if (rec) { hs->timer.cancel(); return; }
             auto kind = decodeHeader(hs->header);
+            if (kind == Kind::Probe) {  // latency check from a host choosing the nearest relay
+                hs->timer.cancel();
+                auto pong = std::make_shared<std::vector<std::uint8_t>>(encode(Message{Kind::Pong}));
+                asio::async_write(*sock, asio::buffer(*pong), [sock, pong](std::error_code, std::size_t) { closeSocket(*sock); });
+                return;
+            }
             if (!kind || (*kind != Kind::OpenRoom && *kind != Kind::Accept && *kind != Kind::Join)) {
                 hs->timer.cancel();
                 closeSocket(*sock);
@@ -265,7 +271,8 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
         if (!room) {
             if (rooms.size() >= opt.maxRooms) { sendError(sock, ErrorCode::RelayBusy); return; }
             std::uint32_t id = 0;
-            do { id = static_cast<std::uint32_t>(crypto::secureRandomU64()); } while (id == 0 || rooms.contains(id));
+            // 30 bits: the room code carries 30 bits of room id.
+            do { id = static_cast<std::uint32_t>(crypto::secureRandomU64()) & 0x3FFFFFFFu; } while (id == 0 || rooms.contains(id));
             Room r;
             r.id = id;
             r.secret = crypto::secureRandomU64();

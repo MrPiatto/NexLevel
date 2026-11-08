@@ -11,6 +11,8 @@
 // Wire: 6-byte header (u32 magic "NXRL", u8 version, u8 kind) then a fixed-size body per kind,
 // all little-endian.
 #include <array>
+#include <chrono>
+#include <string>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -29,6 +31,7 @@ enum class Kind : std::uint8_t {
     Accept = 2,       // host data:    u32 roomId, u64 secret, u32 stream
     Join = 3,         // player:       u32 roomId
     Ping = 4,         // host control keepalive, no body
+    Probe = 5,        // latency check, no body: the relay answers Pong and closes
     // from the relay
     RoomOpened = 0x81,  // u32 roomId, u64 secret
     Incoming = 0x82,    // u32 stream: open a data connection for it
@@ -53,6 +56,16 @@ struct Message {
 };
 
 std::vector<std::uint8_t> encode(const Message& m);
+
+struct RelayEndpoint {
+    std::uint8_t id = 0;  // as in the room code (0..15)
+    std::string name;     // e.g. "EU-1"
+    std::string host;
+    std::uint16_t port = kDefaultPort;
+};
+// Round trip to each relay (Probe -> Pong), nullopt if unreachable within the timeout.
+// Blocking: call it from a worker thread. All relays are probed in parallel.
+std::vector<std::optional<float>> probeRelays(const std::vector<RelayEndpoint>& relays, std::chrono::milliseconds timeout);
 // Header check: nullopt if magic/version/kind is wrong.
 std::optional<Kind> decodeHeader(std::span<const std::uint8_t> header);
 std::optional<Message> decodeBody(Kind k, std::span<const std::uint8_t> body);

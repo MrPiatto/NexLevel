@@ -1,5 +1,7 @@
 #include "session_manager.hpp"
 
+#include "relay_directory.hpp"
+
 #include <nexlevel/core/net/local_address.hpp>
 #include <nexlevel/core/relay/protocol.hpp>
 #include <nexlevel/core/session/room_code.hpp>
@@ -23,20 +25,6 @@ void notify(const std::string& text, NotificationIcon icon) {
         Notification::create(text, icon)->show();
     });
 }
-
-namespace {
-// "relay-server" setting: host or host:port. nullopt when empty.
-std::optional<std::pair<std::string, std::uint16_t>> relaySetting() {
-    auto v = Mod::get()->getSettingValue<std::string>("relay-server");
-    v.erase(std::remove_if(v.begin(), v.end(), [](char c) { return std::isspace(static_cast<unsigned char>(c)); }), v.end());
-    if (v.empty()) return std::nullopt;
-    auto colon = v.rfind(':');
-    if (colon == std::string::npos) return std::pair{v, relay::kDefaultPort};
-    int port = std::atoi(v.substr(colon + 1).c_str());
-    if (port <= 0 || port > 65535) return std::nullopt;
-    return std::pair{v.substr(0, colon), static_cast<std::uint16_t>(port)};
-}
-} // namespace
 
 SessionManager* SessionManager::get() {
     static SessionManager* instance = [] {
@@ -89,10 +77,7 @@ bool SessionManager::hostRoom(std::string* error) {
     m_host = std::move(host);
     m_mapper = std::make_unique<net::PortMapper>();
     m_mapper->start(m_host->port());
-    if (auto r = relaySetting()) {
-        m_host->startRelay(r->first, r->second);
-        log::info("NexLevel: opening the room on relay {}:{}", r->first, r->second);
-    }
+    startBestRelay();
     m_roomLevel = m_editor->level();
     m_roomStarted = std::chrono::steady_clock::now();
     if (m_roomLevel) m_roomLevel->retain();
@@ -106,13 +91,23 @@ bool SessionManager::join(const std::string& roomCode, std::string* error) {
     if (role() != Role::None) { if (error) *error = "Already in a room"; return false; }
     auto addr = session::decodeRoomCode(roomCode);
     if (!addr) { if (error) *error = "That room code isn't valid - check for typos"; return false; }
-    auto relayServer = relaySetting();
-    if (addr->relayRoom != 0 && !relayServer) {
-        if (error) *error = "This code needs the relay server - set it in the NexLevel settings";
-        return false;
+    auto custom = customRelay();
+    auto directory = relayDirectory();
+    if (addr->relayRoom != 0) {
+        const bool known = addr->relayId == session::kCustomRelayId
+                               ? custom.has_value()
+                               : std::any_of(directory.begin(), directory.end(), [&](auto& r) { return r.id == addr->relayId; });
+        if (!known) {
+            if (error) {
+                *error = addr->relayId == session::kCustomRelayId ? "This room uses a private relay - set it in NexLevel Settings"
+                                                                  : "This room uses a newer relay - update NexLevel";
+            }
+            return false;
+        }
     }
     m_client = std::make_unique<session::SessionClient>(static_cast<GameTarget>(NEXLEVEL_TARGET), displayName());
-    if (relayServer) m_client->setRelayServer(relayServer->first, relayServer->second);
+    m_client->setRelayDirectory(directory);
+    if (custom) m_client->setRelayServer(custom->first, custom->second);
     m_client->setAccountId(static_cast<std::uint32_t>(std::max(0, GJAccountManager::sharedState()->m_accountID)));
     m_lastClientState = session::ClientState::Idle;
     m_lastJoined = false;
@@ -125,6 +120,8 @@ bool SessionManager::join(const std::string& roomCode, std::string* error) {
 
 void SessionManager::leave() {
     if (m_host) {
+        ++m_roomGeneration;
+        m_relayProbing = false;
         m_host->stop();
         m_host.reset();
         releaseMapper();
@@ -252,6 +249,40 @@ std::size_t SessionManager::objectCount() const {
     return n;
 }
 
+// Player's own relay if set; otherwise the nearest reachable relay of the directory (probed in
+// the background so the game never waits). Without any relay the room falls back to UPnP / LAN.
+void SessionManager::startBestRelay() {
+    if (!m_host) return;
+    if (auto custom = customRelay()) {
+        m_host->startRelay(custom->first, custom->second, session::kCustomRelayId);
+        log::info("NexLevel: opening the room on the custom relay {}:{}", custom->first, custom->second);
+        return;
+    }
+    auto relays = relayDirectory();
+    if (relays.empty()) return;
+    m_relayProbing = true;
+    const auto generation = ++m_roomGeneration;
+    std::thread([relays, generation] {
+        auto rtts = relay::probeRelays(relays, std::chrono::milliseconds(2500));
+        geode::queueInMainThread([relays, rtts, generation] {
+            auto* sm = SessionManager::get();
+            if (sm->m_roomGeneration != generation || !sm->m_host) return;  // room closed meanwhile
+            sm->m_relayProbing = false;
+            std::optional<std::size_t> best;
+            for (std::size_t i = 0; i < relays.size(); ++i) {
+                if (rtts[i] && (!best || *rtts[i] < *rtts[*best])) best = i;
+            }
+            if (!best) {
+                log::warn("NexLevel: no relay reachable, using direct connections only");
+                return;
+            }
+            const auto& r = relays[*best];
+            log::info("NexLevel: opening the room on relay {} ({}:{}, {:.0f} ms)", r.name, r.host, r.port, *rtts[*best]);
+            sm->m_host->startRelay(r.host, r.port, r.id);
+        });
+    }).detach();
+}
+
 void SessionManager::releaseMapper() {
     if (!m_mapper) return;
     // Removing the router mapping can take a moment; never block the game for it.
@@ -264,10 +295,11 @@ std::optional<std::string> SessionManager::roomCode() const {
     if (m_host->relayRoomId() != 0) {
         session::RoomAddress r;
         r.relayRoom = m_host->relayRoomId();
+        r.relayId = m_host->relayId();
         r.key = m_host->roomKey();
         return session::encodeRoomCode(r);
     }
-    const bool relayPending = m_host->relayState() != session::RelayState::Off && m_host->relayError().empty();
+    const bool relayPending = m_relayProbing || (m_host->relayState() != session::RelayState::Off && m_host->relayError().empty());
     // The code carries this PC's address; players never see or type it.
     auto lan = session::parseIPv4(net::primaryLocalIPv4().value_or("127.0.0.1"))
                    .value_or(std::array<std::uint8_t, 4>{127, 0, 0, 1});
@@ -292,6 +324,7 @@ std::string SessionManager::onlineText() const {
         return m_host->relayState() == session::RelayState::Ready ? "Online: friends on any network can join"
                                                                    : "Reconnecting to the relay...";
     }
+    if (m_relayProbing) return "Finding the nearest relay...";
     if (m_host->relayState() != session::RelayState::Off && m_host->relayError().empty()) return "Connecting to the relay...";
     if (!m_mapper) return {};
     switch (m_mapper->state()) {

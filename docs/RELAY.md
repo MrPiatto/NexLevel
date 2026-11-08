@@ -46,3 +46,23 @@ release build can ship with the official address as the default.
    $env:NEXLEVEL_RELAY="127.0.0.1"
    tools\bot.ps1 join
    ```
+
+## Many relays (public release)
+
+Room codes carry a relay id (0 to 14; 15 means "the private relay in my settings"). That lets
+several relays run side by side, one per region, with more added as the player count grows.
+
+- **Directory.** The mod downloads a small JSON file from the **Relay directory URL** setting and
+  caches it. Free static hosting such as GitHub Pages is enough:
+  ```json
+  {"relays":[{"id":1,"name":"EU-1","host":"eu1.example.com","port":47800},
+             {"id":2,"name":"US-1","host":"us1.example.com","port":47800}]}
+  ```
+  An id must never be reused for a different relay, because open rooms refer to it.
+- **Nearest relay.** When a room opens, the host measures the round trip to every relay in the
+  directory (Probe/Pong) and uses the fastest one. A player only connects to the relay named in
+  the code.
+- **Built-in list.** `relay_directory.cpp` ships with the official relays compiled in, used
+  until the directory is downloaded.
+- **Older builds.** A build that does not know a relay id says "update NexLevel" instead of
+  failing silently.

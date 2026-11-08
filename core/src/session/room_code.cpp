@@ -84,13 +84,14 @@ std::optional<RoomAddress> decodeLong(const std::vector<int>& symbols) {
     if (a.port == 0 || a.lanOctet == 0) return std::nullopt;
     return a;
 }
-constexpr int kRelayDataBits = 32 + 11;  // 43
-constexpr int kRelaySymbols = 10;        // 50 bits; top 2 always 0
+constexpr int kRelayDataBits = 4 + 30 + 11;  // relay id, room id, key = 45
+constexpr int kRelaySymbols = 10;            // 50 bits = 45 data + 5 checksum
 constexpr std::uint64_t kRelayDomain = 0x2A;
 
 std::string encodeRelay(const RoomAddress& a) {
     Bits b;
-    b.put(a.relayRoom, 32);
+    b.put(a.relayId & 0xF, 4);
+    b.put(a.relayRoom & kRelayRoomMask, 30);
     b.put(a.key & kRoomKeyMask, 11);
     const auto sum = checksum5Bits(b.v, kRelayDomain);
     Bits all;
@@ -110,7 +111,8 @@ std::optional<RoomAddress> decodeRelay(const std::vector<int>& symbols) {
     if (all.get(pos, kRelaySymbols * 5 - kRelayDataBits - 5) != 0) return std::nullopt;
     std::vector<bool> data(all.v.begin() + static_cast<std::ptrdiff_t>(pos), all.v.begin() + static_cast<std::ptrdiff_t>(pos + kRelayDataBits));
     RoomAddress a;
-    a.relayRoom = static_cast<std::uint32_t>(all.get(pos, 32));
+    a.relayId = static_cast<std::uint8_t>(all.get(pos, 4));
+    a.relayRoom = static_cast<std::uint32_t>(all.get(pos, 30));
     a.key = static_cast<std::uint16_t>(all.get(pos, 11));
     if (all.get(pos, 5) != checksum5Bits(data, kRelayDomain)) return std::nullopt;
     if (a.relayRoom == 0) return std::nullopt;

@@ -21,6 +21,7 @@ std::optional<std::size_t> bodySize(Kind k) noexcept {
         case Kind::Accept: return 16;
         case Kind::Join: return 4;
         case Kind::Ping: return 0;
+        case Kind::Probe: return 0;
         case Kind::RoomOpened: return 12;
         case Kind::Incoming: return 4;
         case Kind::Pong: return 0;
@@ -42,7 +43,7 @@ std::vector<std::uint8_t> encode(const Message& m) {
         case Kind::RoomOpened: w.u32(m.roomId); w.u64(m.secret); break;
         case Kind::Incoming: w.u32(m.stream); break;
         case Kind::Error: w.u8(static_cast<std::uint8_t>(m.error)); break;
-        case Kind::Ping: case Kind::Pong: case Kind::Paired: break;
+        case Kind::Ping: case Kind::Probe: case Kind::Pong: case Kind::Paired: break;
     }
     return w.take();
 }
@@ -74,10 +75,57 @@ std::optional<Message> decodeBody(Kind k, std::span<const std::uint8_t> body) {
             m.error = static_cast<ErrorCode>(e);
             break;
         }
-        case Kind::Ping: case Kind::Pong: case Kind::Paired: break;
+        case Kind::Ping: case Kind::Probe: case Kind::Pong: case Kind::Paired: break;
     }
     if (!r.atEnd()) return std::nullopt;
     return m;
+}
+
+} // namespace nexlevel::relay
+
+#include <asio.hpp>
+
+namespace nexlevel::relay {
+
+std::vector<std::optional<float>> probeRelays(const std::vector<RelayEndpoint>& relays, std::chrono::milliseconds timeout) {
+    using asio::ip::tcp;
+    using Clock = std::chrono::steady_clock;
+    std::vector<std::optional<float>> out(relays.size());
+    asio::io_context io;
+    struct Probe {
+        tcp::resolver resolver;
+        tcp::socket socket;
+        std::array<std::uint8_t, kHeaderSize> reply{};
+        std::vector<std::uint8_t> request;
+        Clock::time_point sent{};
+        explicit Probe(asio::io_context& io) : resolver(io), socket(io) {}
+    };
+    std::vector<std::unique_ptr<Probe>> probes;
+    for (std::size_t i = 0; i < relays.size(); ++i) {
+        auto& p = *probes.emplace_back(std::make_unique<Probe>(io));
+        p.request = encode(Message{Kind::Probe});
+        p.resolver.async_resolve(relays[i].host, std::to_string(relays[i].port), [&p, &out, i](std::error_code ec, tcp::resolver::results_type results) {
+            if (ec) return;
+            asio::async_connect(p.socket, results, [&p, &out, i](std::error_code cec, const tcp::endpoint&) {
+                if (cec) return;
+                p.sent = Clock::now();
+                asio::async_write(p.socket, asio::buffer(p.request), [&p, &out, i](std::error_code wec, std::size_t) {
+                    if (wec) return;
+                    asio::async_read(p.socket, asio::buffer(p.reply), [&p, &out, i](std::error_code rec, std::size_t) {
+                        if (rec || decodeHeader(p.reply) != Kind::Pong) return;
+                        out[i] = std::chrono::duration<float, std::milli>(Clock::now() - p.sent).count();
+                    });
+                });
+            });
+        });
+    }
+    io.run_for(timeout);
+    for (auto& p : probes) {
+        std::error_code ec;
+        p->socket.close(ec);
+        p->resolver.cancel();
+    }
+    return out;
 }
 
 } // namespace nexlevel::relay

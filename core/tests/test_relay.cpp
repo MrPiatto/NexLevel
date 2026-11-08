@@ -35,18 +35,20 @@ bool waitFor(const std::function<void()>& pump, const std::function<bool()>& don
 std::string relayCode(const SessionHost& host) {
     RoomAddress a;
     a.relayRoom = host.relayRoomId();
+    a.relayId = host.relayId();
     a.key = host.roomKey();
     return encodeRoomCode(a);
 }
 
 void testRelayCode() {
     RoomAddress a;
-    a.relayRoom = 0xDEADBEEF;
+    a.relayRoom = 0x1EADBEEF;
+    a.relayId = 7;
     a.key = 2047;
     auto code = encodeRoomCode(a);
     CHECK(code.size() == 11);  // 10 symbols + dash
     auto back = decodeRoomCode(code);
-    CHECK(back && back->relayRoom == 0xDEADBEEF && back->key == 2047);
+    CHECK(back && back->relayRoom == 0x1EADBEEF && back->key == 2047 && back->relayId == 7);
     int caught = 0, total = 0;
     for (std::size_t i = 0; i < code.size(); ++i) {
         if (code[i] == '-') continue;
@@ -72,7 +74,7 @@ void testRelaySession() {
     SessionHost host(GameTarget::GD2208, "Host");
     CHECK(host.start(0, true));
     for (int i = 0; i < 20; ++i) host.submitLocal(Op::create(host.newId(), PropMap{{1, "1"}, {2, std::to_string(i * 30)}, {3, "105"}}));
-    host.startRelay("127.0.0.1", *rport);
+    host.startRelay("127.0.0.1", *rport, 3);  // relay id 3 in the directory
     CHECK(waitFor([&] { host.pump(); }, [&] { return host.relayState() == RelayState::Ready; }, 3000));
     CHECK(host.relayRoomId() != 0);
     const auto code = relayCode(host);
@@ -80,7 +82,7 @@ void testRelaySession() {
     std::vector<std::unique_ptr<SessionClient>> clients;
     for (int i = 0; i < 3; ++i) {
         clients.push_back(std::make_unique<SessionClient>(GameTarget::GD2208, "Far" + std::to_string(i)));
-        clients.back()->setRelayServer("127.0.0.1", *rport);
+        clients.back()->setRelayDirectory({relay::RelayEndpoint{3, "test", "127.0.0.1", *rport}});
         CHECK(clients.back()->connectCode(code));
     }
     auto pumpAll = [&] { host.pump(); for (auto& c : clients) c->pump(); };
@@ -121,7 +123,7 @@ void testRelaySession() {
     CHECK(host.relayRoomId() == roomBefore);
     for (auto& c : clients) CHECK(c->state() == ClientState::Joined);
     SessionClient late(GameTarget::GD2208, "Late");
-    late.setRelayServer("127.0.0.1", *rport);
+    late.setRelayDirectory({relay::RelayEndpoint{3, "test", "127.0.0.1", *rport}});
     CHECK(late.connectCode(code));
     CHECK(waitFor([&] { pumpAll(); late.pump(); }, [&] { return late.state() == ClientState::Joined; }, 5000));
     CHECK(late.replica() && late.replica()->view().objects().size() == host.state().objects().size());
@@ -152,6 +154,7 @@ void testRelayErrors() {
     c.setRelayServer("127.0.0.1", *rport);
     RoomAddress a;
     a.relayRoom = 12345;
+    a.relayId = kCustomRelayId;
     a.key = 7;
     CHECK(c.connectCode(encodeRoomCode(a)));
     CHECK(waitFor([&] { c.pump(); }, [&] { return c.state() == ClientState::Disconnected; }, 5000));
@@ -160,6 +163,19 @@ void testRelayErrors() {
     // No relay configured: relay codes are refused up front.
     SessionClient noRelay(GameTarget::GD2208, "X");
     CHECK(!noRelay.connectCode(encodeRoomCode(a)));
+    // A relay id this build does not know (newer directory): clear message, no connection.
+    RoomAddress future = a;
+    future.relayId = 9;
+    SessionClient old(GameTarget::GD2208, "Old");
+    old.setRelayDirectory({relay::RelayEndpoint{1, "eu", "127.0.0.1", *rport}});
+    CHECK(!old.connectCode(encodeRoomCode(future)));
+    CHECK(old.lastError().find("unknown relay") != std::string::npos);
+
+    // Latency probe: the live relay answers, a closed port does not.
+    auto probe = relay::probeRelays({relay::RelayEndpoint{1, "live", "127.0.0.1", *rport}, relay::RelayEndpoint{2, "dead", "127.0.0.1", 1}},
+                                    std::chrono::milliseconds(1500));
+    CHECK(probe.size() == 2 && probe[0].has_value() && !probe[1].has_value());
+    if (probe[0]) std::printf("  relay probe: %.2f ms\n", *probe[0]);
 
     // A "host" that opens a room but never answers: the player gets a timeout, not a hang.
     asio::io_context io;
@@ -177,6 +193,7 @@ void testRelayErrors() {
         waiting.setRelayServer("127.0.0.1", *rport);
         RoomAddress b;
         b.relayRoom = msg->roomId;
+        b.relayId = kCustomRelayId;
         CHECK(waiting.connectCode(encodeRoomCode(b)));
         CHECK(waitFor([&] { waiting.pump(); }, [&] { return waiting.state() == ClientState::Disconnected; }, 5000));
         CHECK(waiting.lastError().find("did not answer") != std::string::npos);

@@ -112,6 +112,7 @@ struct SessionHost::Impl {
     std::optional<asio::steady_timer> relayPing;
     std::atomic<RelayState> relayStateA{RelayState::Off};
     std::atomic<std::uint32_t> relayRoomA{0};
+    std::uint8_t relayIdValue = 0;  // main thread
     mutable std::mutex relayErrMutex;
     std::string relayErr;
 
@@ -494,8 +495,9 @@ void SessionHost::stop() {
     m->net.stop();
 }
 
-void SessionHost::startRelay(const std::string& relayHost, std::uint16_t relayPort) {
+void SessionHost::startRelay(const std::string& relayHost, std::uint16_t relayPort, std::uint8_t relayId) {
     if (!m->running) return;
+    m->relayIdValue = relayId;
     m->relayStateA = RelayState::Connecting;
     m->net.post([this, relayHost, relayPort] {
         m->relayHost = relayHost;
@@ -504,6 +506,7 @@ void SessionHost::startRelay(const std::string& relayHost, std::uint16_t relayPo
         m->relayConnect();
     });
 }
+std::uint8_t SessionHost::relayId() const noexcept { return m->relayIdValue; }
 RelayState SessionHost::relayState() const noexcept { return m->relayStateA.load(); }
 std::uint32_t SessionHost::relayRoomId() const noexcept { return m->relayRoomA.load(); }
 std::string SessionHost::relayError() const {

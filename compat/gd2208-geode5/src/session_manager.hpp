@@ -85,6 +85,7 @@ private:
     void ensureScheduled();
     void tick(float dt);
     void releaseMapper();
+    void startBestRelay();
     void endClient(const std::string& message, geode::NotificationIcon icon);
 
     std::unique_ptr<session::SessionHost> m_host;
@@ -96,6 +97,8 @@ private:
     bool m_scheduled = false;
     bool m_lastJoined = false;
     std::chrono::steady_clock::time_point m_roomStarted{};
+    bool m_relayProbing = false;
+    std::uint64_t m_roomGeneration = 0;
     std::vector<session::PeerInfo> m_lastPeers;
 };
 

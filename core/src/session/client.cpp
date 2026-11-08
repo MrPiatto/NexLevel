@@ -7,6 +7,7 @@
 #include <nexlevel/core/session/room_code.hpp>
 #include <nexlevel/core/net/local_address.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <future>
 #include <set>
@@ -51,8 +52,7 @@ struct SessionClient::Impl {
     std::vector<PeerInfo> peers;
     // Addresses to try for this room, raced in parallel; the first to connect wins.
     std::vector<ConnectTarget> targets;
-    std::string relayHost;
-    std::uint16_t relayPort = 0;
+    std::vector<relay::RelayEndpoint> relays;  // directory + custom (id kCustomRelayId)
     std::uint16_t roomKey = 0;
     std::uint64_t resumeToken = 0;
     std::uint32_t generation = 0;  // ignores events from connections that were replaced
@@ -262,8 +262,12 @@ bool SessionClient::connectCode(std::string_view code) {
     auto addr = decodeRoomCode(code);
     if (!addr) return false;
     if (addr->relayRoom != 0) {
-        if (m->relayHost.empty()) { m->error = "no relay server configured"; return false; }
-        connectTargets({ConnectTarget{m->relayHost, m->relayPort, addr->relayRoom}}, addr->key);
+        auto it = std::find_if(m->relays.begin(), m->relays.end(), [&](auto& r) { return r.id == addr->relayId; });
+        if (it == m->relays.end()) {
+            m->error = addr->relayId == kCustomRelayId ? "no relay server configured" : "unknown relay " + std::to_string(addr->relayId) + " (update NexLevel)";
+            return false;
+        }
+        connectTargets({ConnectTarget{it->host, it->port, addr->relayRoom}}, addr->key);
         return true;
     }
     std::vector<ConnectTarget> targets{{addr->ipString(), addr->port, 0}};
@@ -287,9 +291,16 @@ void SessionClient::connect(const std::string& host, std::uint16_t port, std::ui
     connectTargets({ConnectTarget{host, port, 0}}, roomKey);
 }
 
+void SessionClient::setRelayDirectory(std::vector<relay::RelayEndpoint> relays) {
+    std::erase_if(m->relays, [](auto& r) { return r.id != kCustomRelayId; });
+    for (auto& r : relays) {
+        if (r.id != kCustomRelayId) m->relays.push_back(std::move(r));
+    }
+}
+
 void SessionClient::setRelayServer(const std::string& host, std::uint16_t port) {
-    m->relayHost = host;
-    m->relayPort = port;
+    std::erase_if(m->relays, [](auto& r) { return r.id == kCustomRelayId; });
+    if (!host.empty()) m->relays.push_back(relay::RelayEndpoint{kCustomRelayId, "custom", host, port});
 }
 
 void SessionClient::connectTargets(std::vector<ConnectTarget> targets, std::uint16_t roomKey) {

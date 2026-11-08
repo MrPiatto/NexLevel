@@ -14,8 +14,8 @@
 	"settings": {
 		"relay-server": {
 			"type": "string",
-			"name": "Relay server",
-			"description": "Address of the NexLevel relay (host or host:port). With a relay, rooms work from any network, including mobile data. Everyone in a room must use the same relay. Leave empty to play without one.",
+			"name": "Private relay (optional)",
+			"description": "Your own relay server (host or host:port). Leave empty to use the official relays. Everyone joining a private-relay room needs the same address here.",
 			"default": "",
 			"filter": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:"
 		},
@@ -30,6 +30,12 @@
 			"name": "Show other players' view",
 			"description": "Draws a coloured frame with each player's name where they are working in the editor.",
 			"default": true
+		},
+		"relay-directory": {
+			"type": "string",
+			"name": "Relay directory URL",
+			"description": "Where NexLevel downloads the list of official relays. Leave as is unless you run your own network.",
+			"default": ""
 		}
 	},
 	"tags": [

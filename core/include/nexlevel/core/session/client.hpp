@@ -3,6 +3,7 @@
 // Same threading model as SessionHost: call pump() once per frame on the game's main thread.
 #include <nexlevel/core/session/messages.hpp>
 #include <nexlevel/core/session/ping.hpp>
+#include <nexlevel/core/relay/protocol.hpp>
 #include <nexlevel/core/sync/client_replica.hpp>
 
 #include <map>
@@ -33,7 +34,9 @@ public:
     void connect(const std::string& host, std::uint16_t port, std::uint16_t roomKey);
     // Several addresses for the same room (e.g. public + LAN): tried in parallel, first wins.
     void connectTargets(std::vector<ConnectTarget> targets, std::uint16_t roomKey);
-    // Relay used for 10-character (relay) room codes. Must match the host's relay.
+    // Relays for 10-character room codes: the code names a relay id, looked up here.
+    void setRelayDirectory(std::vector<relay::RelayEndpoint> relays);
+    // A relay from the player's own settings (relay id kCustomRelayId).
     void setRelayServer(const std::string& host, std::uint16_t port);
     // Join with a room code. Returns false (and does nothing) if the code is malformed, or is a
     // relay code and no relay server was set (lastError() says which).
