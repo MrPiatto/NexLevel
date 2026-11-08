@@ -8,7 +8,7 @@
 	},
 	"id": "forg3studios.nexlevel",
 	"name": "NexLevel",
-	"version": "v0.1.0-alpha.1",
+	"version": "v1.0.0-beta.1",
 	"developer": "Forg3 Studios",
 	"description": "Create Together. Build Beyond. Real-time collaborative level editing.",
 	"settings": {
@@ -19,5 +19,10 @@
 			"default": "",
 			"filter": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:"
 		}
-	}
+	},
+	"tags": [
+		"editor",
+		"online",
+		"enhancement"
+	]
 }

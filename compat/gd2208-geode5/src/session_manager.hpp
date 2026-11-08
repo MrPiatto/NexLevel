@@ -51,6 +51,11 @@ public:
     std::string statusText() const;
     std::string displayName() const;
 
+    // Editor presence: where this player is looking, and where the others are.
+    void setLocalPresence(float x, float y, float zoom);
+    std::vector<session::Presence> presences() const;
+    std::string peerName(sync::PeerId peer) const;
+
     // Editor plumbing.
     void attachEditor(IEditorBridge* bridge);
     void detachEditor(IEditorBridge* bridge);

@@ -52,6 +52,10 @@ public:
     const sync::Replica& state() const noexcept;
     std::vector<PeerInfo> peers() const;  // host first
 
+    // Editor presence (where each player is looking). Sent at most ~10 times per second.
+    void setLocalPresence(float x, float y, float zoom);
+    std::vector<Presence> presences() const;  // other players only
+
     // Remove a player: they get a Kicked notice and are disconnected. Returns false if not found.
     bool kick(sync::PeerId peer);
 

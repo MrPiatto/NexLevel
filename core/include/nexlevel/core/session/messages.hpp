@@ -25,6 +25,8 @@ enum class MsgType : std::uint16_t {
     Submit = 10,       // client -> host: a local op
     Sequenced = 11,    // host -> all: an op in global order (also the author's ack)
     Rejected = 12,     // host -> author: op refused, will never be sequenced
+    PresenceUpdate = 13,  // client -> host: where I am looking in the editor (not level content)
+    Presence = 14,        // host -> others: a player's editor position (rate limited, not stored)
     Sealed = 20,       // encrypted envelope around any of the above (see crypto/secure_channel.hpp)
 };
 
@@ -74,12 +76,21 @@ struct Rejected {
     std::uint8_t reason = 0;
 };
 
+// Editor presence: camera centre in level coordinates and zoom. Never part of the level.
+struct Presence {
+    sync::PeerId peer = 0;  // ignored in PresenceUpdate (the host fills it from the connection)
+    float x = 0, y = 0, zoom = 1;
+    bool operator==(const Presence&) const = default;
+};
+bool validPresence(const Presence& p) noexcept;
+
 inline constexpr std::size_t kMaxDisplayName = 32;
 inline constexpr std::size_t kChunkTargetBytes = 192 * 1024;  // well under the 1 MiB frame cap
 inline constexpr std::size_t kMaxChunkEntries = 200'000;
 
 std::vector<std::uint8_t> encode(const Hello& m);
 std::vector<std::uint8_t> encode(const Secure& m);
+std::vector<std::uint8_t> encode(const Presence& m);
 std::vector<std::uint8_t> encode(const Welcome& m);
 std::vector<std::uint8_t> encode(const SnapshotEnd& m);
 std::vector<std::uint8_t> encode(const Refuse& m);
@@ -91,6 +102,7 @@ std::vector<std::vector<std::uint8_t>> encodeSnapshotChunks(const sync::Replica&
 
 std::optional<Hello> decodeHello(std::span<const std::uint8_t> p);
 std::optional<Secure> decodeSecure(std::span<const std::uint8_t> p);
+std::optional<Presence> decodePresence(std::span<const std::uint8_t> p);
 std::optional<Welcome> decodeWelcome(std::span<const std::uint8_t> p);
 std::optional<SnapshotChunk> decodeSnapshotChunk(std::span<const std::uint8_t> p);
 std::optional<SnapshotEnd> decodeSnapshotEnd(std::span<const std::uint8_t> p);

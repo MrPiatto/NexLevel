@@ -13,6 +13,7 @@
 #include <nexlevel/core/sync/object_props.hpp>
 
 #include "level_settings_adapter.hpp"
+#include "presence_overlay.hpp"
 #include "session_manager.hpp"
 
 #include <memory>
@@ -204,6 +205,8 @@ public:
         m_createdLogged = m_removedLogged = 0;
         m_dirty.clear();
         m_removedThisFrame.clear();
+
+        nexlevel::mod::updatePresence(m_layer, m_paused);
 
         // Remote changes held back while the local user had the object selected.
         if (!m_deferred.empty() && !m_paused) {

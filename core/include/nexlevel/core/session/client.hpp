@@ -51,6 +51,10 @@ public:
     std::optional<sync::Op> submitLocal(sync::Op op);
     std::optional<sync::NetId> newId();
 
+    // Editor presence (where each player is looking). Sent at most ~10 times per second.
+    void setLocalPresence(float x, float y, float zoom);
+    std::vector<Presence> presences() const;  // other players only
+
     ClientState state() const noexcept;
     const std::string& lastError() const noexcept;
     std::optional<RefuseReason> refuseReason() const noexcept;

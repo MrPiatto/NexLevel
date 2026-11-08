@@ -34,6 +34,18 @@ std::vector<std::uint8_t> encode(const Hello& m) {
     w.bytes(m.publicKey);
     return w.take();
 }
+bool validPresence(const Presence& p) noexcept {
+    auto ok = [](float v, float lim) { return v == v && v > -lim && v < lim; };  // v == v: not NaN
+    return ok(p.x, 1e7f) && ok(p.y, 1e7f) && p.zoom > 0.01f && p.zoom < 100.f;
+}
+std::vector<std::uint8_t> encode(const Presence& m) {
+    ByteWriter w;
+    w.u16(m.peer);
+    w.f32(m.x);
+    w.f32(m.y);
+    w.f32(m.zoom);
+    return w.take();
+}
 std::vector<std::uint8_t> encode(const Secure& m) {
     ByteWriter w;
     w.bytes(m.publicKey);
@@ -129,6 +141,16 @@ std::optional<Hello> decodeHello(std::span<const std::uint8_t> p) {
     auto pk = r.bytes(32);
     if (!r.atEnd()) return std::nullopt;
     std::copy(pk.begin(), pk.end(), m.publicKey.begin());
+    return m;
+}
+std::optional<Presence> decodePresence(std::span<const std::uint8_t> p) {
+    ByteReader r(p);
+    Presence m;
+    m.peer = r.u16();
+    m.x = r.f32();
+    m.y = r.f32();
+    m.zoom = r.f32();
+    if (!r.atEnd() || !validPresence(m)) return std::nullopt;
     return m;
 }
 std::optional<Secure> decodeSecure(std::span<const std::uint8_t> p) {

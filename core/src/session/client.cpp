@@ -59,6 +59,9 @@ struct SessionClient::Impl {
     int reconnectAttempts = 0;
     Clock::time_point nextRetry{};
     bool identityReset = false;
+    std::map<sync::PeerId, Presence> presences;
+    std::optional<Presence> lastSentPresence;
+    Clock::time_point lastPresenceSent{};
     std::optional<crypto::KeyPair> keys;           // this connection's key pair
     std::optional<crypto::SecureChannel> channel;  // set once the host's key arrived
 
@@ -224,6 +227,7 @@ struct SessionClient::Impl {
             changed.insert(changed.end(), oldIds.begin(), oldIds.end());
         }
         resumeToken = w.resumeToken;
+        lastSentPresence.reset();  // announce our position again in the (new) room connection
         welcome.reset();
         reconnectAttempts = 0;
         error.clear();
@@ -373,7 +377,19 @@ std::vector<sync::NetId> SessionClient::pump() {
                     m->refuse = r ? std::optional(r->reason) : std::nullopt;
                     m->hostTarget = r ? std::optional(r->hostTarget) : std::nullopt;
                 } else if (type == MsgType::Roster) {
-                    if (auto r = decodeRoster(e.frame.payload)) m->peers = std::move(r->peers);
+                    if (auto r = decodeRoster(e.frame.payload)) {
+                        m->peers = std::move(r->peers);
+                        // Forget where players who left were.
+                        for (auto it = m->presences.begin(); it != m->presences.end();) {
+                            bool present = false;
+                            for (auto& peer : m->peers) present = present || peer.id == it->first;
+                            it = present ? std::next(it) : m->presences.erase(it);
+                        }
+                    }
+                } else if (type == MsgType::Presence) {
+                    if (auto pr = decodePresence(e.frame.payload)) {
+                        if (!m->replica || pr->peer != m->replica->self()) m->presences[pr->peer] = *pr;
+                    }
                 } else if (type == MsgType::Kicked) {
                     m->state = ClientState::Kicked;
                     m->peers.clear();
@@ -403,6 +419,23 @@ std::optional<sync::Op> SessionClient::submitLocal(sync::Op op) {
     auto sent = m->replica->local(std::move(op));
     if (m->state == ClientState::Joined) m->send(MsgType::Submit, encodeOpMsg(sent));
     return sent;  // while reconnecting it stays pending and is resent after the snapshot
+}
+
+void SessionClient::setLocalPresence(float x, float y, float zoom) {
+    if (m->state != ClientState::Joined) return;
+    Presence pr{0, x, y, zoom};
+    if (!validPresence(pr) || (m->lastSentPresence && *m->lastSentPresence == pr)) return;
+    const auto now = Clock::now();
+    if (now - m->lastPresenceSent < std::chrono::milliseconds(100)) return;
+    m->lastPresenceSent = now;
+    m->lastSentPresence = pr;
+    m->send(MsgType::PresenceUpdate, encode(pr));
+}
+
+std::vector<Presence> SessionClient::presences() const {
+    std::vector<Presence> out;
+    for (auto& [_, p] : m->presences) out.push_back(p);
+    return out;
 }
 
 std::optional<sync::NetId> SessionClient::newId() {

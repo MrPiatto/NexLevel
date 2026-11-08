@@ -37,6 +37,8 @@ struct SessionHost::Impl {
         std::uint64_t token = 0;
         bool joined = false;
         std::optional<crypto::SecureChannel> channel;  // set once the key exchange is done
+        std::optional<Presence> presence;
+        Clock::time_point lastPresence{};
     };
     struct Identity {  // survives the connection, for reconnects
         sync::PeerId id = 0;
@@ -260,6 +262,16 @@ struct SessionHost::Impl {
         }
         return out;
     }
+    std::optional<Presence> hostPresence;
+    Clock::time_point lastHostPresence{};
+
+    void broadcastPresence(const Presence& pr, std::uint32_t exceptConn) {
+        auto payload = encode(pr);
+        for (auto& [conn, p] : peers) {
+            if (p.joined && conn != exceptConn) sendTo(conn, MsgType::Presence, payload);
+        }
+    }
+
     void broadcastRoster() {
         auto payload = encode(Roster{roster()});
         for (auto& [conn, p] : peers) {
@@ -331,6 +343,11 @@ struct SessionHost::Impl {
         p.joined = true;
         sendJoinPackage(conn, p, resumed);
         broadcastRoster();
+        // Where everyone already is.
+        if (hostPresence) sendTo(conn, MsgType::Presence, encode(*hostPresence));
+        for (auto& [c, other] : peers) {
+            if (c != conn && other.joined && other.presence) sendTo(conn, MsgType::Presence, encode(*other.presence));
+        }
     }
 
     void handleFrame(std::uint32_t conn, Peer& p, const Frame& f, std::vector<sync::NetId>& changed) {
@@ -351,6 +368,17 @@ struct SessionHost::Impl {
     }
 
     void handleSecureFrame(std::uint32_t conn, Peer& p, const Frame& f, std::vector<sync::NetId>& changed) {
+        if (static_cast<MsgType>(f.type) == MsgType::PresenceUpdate) {
+            auto pr = decodePresence(f.payload);
+            if (!pr) { closeConn(conn, "malformed presence"); return; }
+            const auto now = Clock::now();
+            if (now - p.lastPresence < std::chrono::milliseconds(50)) return;  // rate limit, drop extras
+            p.lastPresence = now;
+            pr->peer = p.id;  // identity comes from the connection
+            p.presence = pr;
+            broadcastPresence(*pr, conn);
+            return;
+        }
         if (static_cast<MsgType>(f.type) != MsgType::Submit) {
             closeConn(conn, "unexpected message");
             return;
@@ -499,6 +527,24 @@ sync::Op SessionHost::submitLocal(sync::Op op) {
 sync::NetId SessionHost::newId() { return m->ids.next(); }
 const sync::Replica& SessionHost::state() const noexcept { return m->sequencer.state(); }
 std::vector<PeerInfo> SessionHost::peers() const { return m->roster(); }
+
+void SessionHost::setLocalPresence(float x, float y, float zoom) {
+    Presence pr{kHostPeer, x, y, zoom};
+    if (!validPresence(pr) || (m->hostPresence && *m->hostPresence == pr)) return;
+    const auto now = Clock::now();
+    if (now - m->lastHostPresence < std::chrono::milliseconds(100)) return;
+    m->lastHostPresence = now;
+    m->hostPresence = pr;
+    m->broadcastPresence(pr, 0);
+}
+
+std::vector<Presence> SessionHost::presences() const {
+    std::vector<Presence> out;
+    for (auto& [_, p] : m->peers) {
+        if (p.joined && p.presence) out.push_back(*p.presence);
+    }
+    return out;
+}
 
 bool SessionHost::kick(sync::PeerId peer) {
     for (auto it = m->peers.begin(); it != m->peers.end(); ++it) {

@@ -146,6 +146,24 @@ std::optional<sync::PeerId> SessionManager::selfId() const {
     return std::nullopt;
 }
 
+void SessionManager::setLocalPresence(float x, float y, float zoom) {
+    if (m_host) m_host->setLocalPresence(x, y, zoom);
+    else if (m_client) m_client->setLocalPresence(x, y, zoom);
+}
+
+std::vector<session::Presence> SessionManager::presences() const {
+    if (m_host) return m_host->presences();
+    if (m_client) return m_client->presences();
+    return {};
+}
+
+std::string SessionManager::peerName(sync::PeerId peer) const {
+    for (auto& p : peers()) {
+        if (p.id == peer) return p.name;
+    }
+    return "Player";
+}
+
 void SessionManager::releaseMapper() {
     if (!m_mapper) return;
     // Removing the router mapping can take a moment; never block the game for it.
