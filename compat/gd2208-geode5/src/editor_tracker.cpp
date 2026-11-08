@@ -4,6 +4,7 @@
 // so deletion is caught at LevelEditorLayer::removeObject and undo/redo at LevelEditorLayer::handleAction.
 #include <Geode/Geode.hpp>
 #include <Geode/modify/EditorUI.hpp>
+#include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/LevelEditorLayer.hpp>
 
 #include <nexlevel/core/sync/object_props.hpp>
@@ -39,8 +40,9 @@ public:
         for (auto& [o, _] : m_cache) m_dirty.insert(o);
     }
 
+    // Idempotent: createObject also goes through addToSection, so a known object is ignored.
     void onCreated(GameObject* o, const char* via) {
-        if (!o || m_paused) return;
+        if (!o || m_paused || !m_armed || m_cache.contains(o)) return;
         auto props = read(o);
         if (m_createdLogged++ < kMaxLogLinesPerKind) {
             log::info("NexLevel diff: created uid={} id={} ({} props, via {})", o->m_uniqueID, o->m_objectID, props.size(), via);
@@ -50,7 +52,7 @@ public:
     }
 
     void onRemoved(GameObject* o) {
-        if (!o || m_paused) return;
+        if (!o || m_paused || !m_armed) return;
         if (m_removedLogged++ < kMaxLogLinesPerKind) {
             log::info("NexLevel diff: removed uid={} id={}", o->m_uniqueID, o->m_objectID);
         }
@@ -64,7 +66,14 @@ public:
         m_dirty.clear();
     }
 
+    LevelEditorLayer* layer() const { return m_layer; }
+
     void tick(CCArray* selected) {
+        // Armed on the first frame, so objects added while the level loads are not reported.
+        if (!m_armed) {
+            m_armed = true;
+            return;
+        }
         if (!m_paused) {
             // Selection catch-all: popups (colour, groups, properties) edit the selection.
             if (selected) {
@@ -117,10 +126,19 @@ private:
     std::unordered_set<GameObject*> m_dirty;
     std::size_t m_createdLogged = 0, m_removedLogged = 0;
     bool m_paused = false;
+    bool m_armed = false;
 };
 
 // Owned by the active EditorUI's fields; null outside the editor.
 EditorTracker* g_tracker = nullptr;
+
+// Editor UI previews (build tab buttons) are GameObjects too; they live under EditorUI, not in the level.
+bool isUnderEditorUI(CCNode* node) {
+    for (auto* n = node ? node->getParent() : nullptr; n; n = n->getParent()) {
+        if (typeinfo_cast<EditorUI*>(n)) return true;
+    }
+    return false;
+}
 
 template <class F>
 void forEachObject(CCArray* objects, F&& f) {
@@ -224,6 +242,16 @@ class $modify(NLLevelEditorLayer, LevelEditorLayer) {
         if (g_tracker) {
             g_tracker->setPaused(false);
             g_tracker->resyncSilently();
+        }
+    }
+};
+
+// Catch-all for objects entering the level by paths that skip createObject (e.g. undo of a delete).
+class $modify(NLGJBaseGameLayer, GJBaseGameLayer) {
+    void addToSection(GameObject* object) {
+        GJBaseGameLayer::addToSection(object);
+        if (g_tracker && static_cast<GJBaseGameLayer*>(g_tracker->layer()) == this && !isUnderEditorUI(object)) {
+            g_tracker->onCreated(object, "addToSection");
         }
     }
 };
