@@ -1,11 +1,13 @@
 // nexlevel_bot - headless NexLevel player for testing a room without a second PC or a second GD.
 //
-//   nexlevel_bot join <ip[:port]> [seconds]   join a room, build a scripted test, print what others do
-//   nexlevel_bot host [seconds]               open a room (port 47777) and print what players do
+//   nexlevel_bot join <ROOM-CODE> [seconds]   join a room, build a scripted test, print what others do
+//   nexlevel_bot host [seconds]               open a room (port 47777), print its code and what players do
 //
 // Speaks exactly the same protocol as the mod (core library), as GD 2.208x.
 #include <nexlevel/core/session/client.hpp>
 #include <nexlevel/core/session/host.hpp>
+#include <nexlevel/core/session/room_code.hpp>
+#include <nexlevel/core/net/local_address.hpp>
 
 #include <chrono>
 #include <cstdio>
@@ -39,16 +41,15 @@ void printRoster(const std::vector<PeerInfo>& peers) {
     std::printf("\n");
 }
 
-int runJoin(const std::string& address, int seconds) {
-    std::string host = address;
-    std::uint16_t port = kPort;
-    if (auto colon = address.rfind(':'); colon != std::string::npos) {
-        host = address.substr(0, colon);
-        port = static_cast<std::uint16_t>(std::atoi(address.substr(colon + 1).c_str()));
+int runJoin(const std::string& code, int seconds) {
+    auto addr = decodeRoomCode(code);
+    if (!addr) {
+        std::printf("[bot] '%s' is not a valid room code (check for typos)\n", code.c_str());
+        return 1;
     }
     SessionClient client(kTarget, "NexBot");
-    client.connect(host, port);
-    std::printf("[bot] connecting to %s:%u ...\n", host.c_str(), port);
+    client.connect(addr->ipString(), addr->port, addr->key);
+    std::printf("[bot] room %s -> connecting to %s:%u ...\n", code.c_str(), addr->ipString().c_str(), addr->port);
 
     std::vector<NetId> mine;
     std::size_t lastRoster = 0;
@@ -132,7 +133,9 @@ int runHost(int seconds) {
         std::printf("[bot] cannot open port %u: %s\n", kPort, err.c_str());
         return 1;
     }
-    std::printf("[bot] room open on port %u (GD 2.208x) for %d s\n", *port, seconds);
+    auto ip = parseIPv4(net::primaryLocalIPv4().value_or("127.0.0.1")).value_or(std::array<std::uint8_t, 4>{127, 0, 0, 1});
+    std::printf("[bot] room open (GD 2.208x) for %d s - room code: %s\n", seconds,
+        encodeRoomCode(RoomAddress{ip, *port, host.roomKey()}).c_str());
     std::size_t lastRoster = 1;
     auto start = Clock::now();
     while (Clock::now() - start < std::chrono::seconds(seconds)) {
@@ -157,6 +160,6 @@ int main(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     if (argc >= 3 && std::string(argv[1]) == "join") return runJoin(argv[2], argc >= 4 ? std::atoi(argv[3]) : 300);
     if (argc >= 2 && std::string(argv[1]) == "host") return runHost(argc >= 3 ? std::atoi(argv[2]) : 300);
-    std::printf("usage:\n  nexlevel_bot join <ip[:port]> [seconds]\n  nexlevel_bot host [seconds]\n");
+    std::printf("usage:\n  nexlevel_bot join <ROOM-CODE> [seconds]\n  nexlevel_bot host [seconds]\n");
     return 1;
 }

@@ -20,7 +20,9 @@ public:
     SessionClient(const SessionClient&) = delete;
     SessionClient& operator=(const SessionClient&) = delete;
 
-    void connect(const std::string& host, std::uint16_t port);
+    void connect(const std::string& host, std::uint16_t port, std::uint16_t roomKey);
+    // Join with a room code. Returns false (and does nothing) if the code is malformed.
+    bool connectCode(std::string_view code);
     void disconnect();
 
     // Process network events. Returns ids whose visible state changed (apply them to the local editor).

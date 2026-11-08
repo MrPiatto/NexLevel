@@ -6,7 +6,7 @@
 namespace nexlevel {
 
 // Bumped on any incompatible wire-format change. Identical on all game targets.
-inline constexpr std::uint16_t kProtocolVersion = 1;
+inline constexpr std::uint16_t kProtocolVersion = 2;  // v2: Hello carries the room key
 
 // Game line a build targets. V1 rule: host and client must match exactly.
 enum class GameTarget : std::uint8_t {

@@ -29,6 +29,7 @@ public:
     void stop();
     bool running() const noexcept;
     std::uint16_t port() const noexcept;
+    std::uint16_t roomKey() const noexcept;  // random per room; players must present it (room code)
 
     // Process network events. Returns ids changed by other peers' ops (apply them to the host's editor).
     std::vector<sync::NetId> pump();

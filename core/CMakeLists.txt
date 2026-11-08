@@ -41,6 +41,7 @@ add_library(nexlevel_core STATIC
     src/sync/host_sequencer.cpp
     src/sync/client_replica.cpp
     src/session/messages.cpp
+    src/session/room_code.cpp
     src/session/host.cpp
     src/session/client.cpp
 )

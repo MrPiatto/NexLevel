@@ -4,6 +4,7 @@
 #include <nexlevel/core/session/client.hpp>
 #include <nexlevel/core/session/host.hpp>
 #include <nexlevel/core/net/local_address.hpp>
+#include <nexlevel/core/session/room_code.hpp>
 
 #include <chrono>
 #include <functional>
@@ -12,6 +13,7 @@
 #include <thread>
 #include <vector>
 #include <algorithm>
+#include <cctype>
 
 using namespace nexlevel;
 using namespace nexlevel::session;
@@ -64,7 +66,11 @@ void testLoopbackSession() {
     std::vector<std::unique_ptr<SessionClient>> clients;
     for (int i = 0; i < 3; ++i) {
         clients.push_back(std::make_unique<SessionClient>(GameTarget::GD2208, "Player" + std::to_string(i + 1)));
-        clients.back()->connect("127.0.0.1", *port);
+        if (i == 0) {
+            clients.back()->connect("127.0.0.1", *port, host.roomKey());
+        } else {  // the others join with the room code, like players will
+            CHECK(clients.back()->connectCode(encodeRoomCode(RoomAddress{{127, 0, 0, 1}, *port, host.roomKey()})));
+        }
     }
     auto pumpAll = [&] {
         host.pump();
@@ -114,12 +120,21 @@ void testLoopbackSession() {
 
     // V1 rule: a player on another GD version is refused with a clear reason.
     SessionClient other(GameTarget::GD2209, "Other");
-    other.connect("127.0.0.1", *port);
+    other.connect("127.0.0.1", *port, host.roomKey());
     bool refused = waitUntil([&] { host.pump(); other.pump(); for (auto& c : clients) c->pump(); },
         [&] { return other.state() == ClientState::Refused; }, 5000);
     CHECK(refused);
     CHECK(other.refuseReason() == RefuseReason::WrongGameVersion);
     CHECK(other.hostTarget() == GameTarget::GD2208);
+    CHECK(host.peers().size() == 4);
+
+    // A wrong room code is refused even though the address is right.
+    SessionClient intruder(GameTarget::GD2208, "Intruder");
+    intruder.connect("127.0.0.1", *port, static_cast<std::uint16_t>((host.roomKey() + 1) & kRoomKeyMask));
+    bool keyRefused = waitUntil([&] { host.pump(); intruder.pump(); for (auto& c : clients) c->pump(); },
+        [&] { return intruder.state() == ClientState::Refused; }, 5000);
+    CHECK(keyRefused);
+    CHECK(intruder.refuseReason() == RefuseReason::WrongRoomCode);
     CHECK(host.peers().size() == 4);
 
     // A client leaving is noticed by the host and by everyone's roster.
@@ -156,7 +171,7 @@ void testLoopbackSession() {
 
 void testConnectFailure() {
     SessionClient c(GameTarget::GD2208, "Nobody");
-    c.connect("127.0.0.1", 1);  // nothing listens on port 1
+    c.connect("127.0.0.1", 1, 0);  // nothing listens on port 1
     bool failed = waitUntil([&] { c.pump(); }, [&] { return c.state() == ClientState::Disconnected; }, 5000);
     CHECK(failed);
     CHECK(!c.lastError().empty());
@@ -171,7 +186,46 @@ void testLocalAddress() {
     std::printf("  primary LAN IPv4: %s\n", ip ? ip->c_str() : "(none)");
 }
 
+void testRoomCodes() {
+    RoomAddress a{{192, 168, 1, 23}, 47777, 1337};
+    auto code = encodeRoomCode(a);
+    CHECK(code.size() == 15 && code[4] == '-' && code[9] == '-');
+    CHECK(decodeRoomCode(code) == a);
+    // Case, dashes and spaces don't matter; Crockford aliases are accepted.
+    std::string lower;
+    for (char ch : code) if (ch != '-') lower += static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    CHECK(decodeRoomCode(lower) == a);
+    CHECK(decodeRoomCode(" " + code.substr(0, 4) + " " + code.substr(5)) == a);
+    // Extremes round-trip.
+    RoomAddress b{{255, 255, 255, 255}, 65535, kRoomKeyMask};
+    CHECK(decodeRoomCode(encodeRoomCode(b)) == b);
+    RoomAddress c{{10, 0, 0, 1}, 1, 0};
+    CHECK(decodeRoomCode(encodeRoomCode(c)) == c);
+    // Single-character typos are caught by the checksum (most of them).
+    const std::string alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    int caught = 0, total = 0;
+    for (std::size_t pos = 0; pos < code.size(); ++pos) {
+        if (code[pos] == '-') continue;
+        for (char rep : alphabet) {
+            if (rep == code[pos]) continue;
+            auto typo = code;
+            typo[pos] = rep;
+            ++total;
+            if (!decodeRoomCode(typo)) ++caught;
+        }
+    }
+    CHECK(caught * 100 / total >= 90);
+    std::printf("  room code %s, %d/%d single-char typos caught\n", code.c_str(), caught, total);
+    CHECK(!decodeRoomCode(""));
+    CHECK(!decodeRoomCode("K7Q2-M9XA"));
+    CHECK(!decodeRoomCode("K7Q2-M9XA-3PF1Q-ZZ"));
+    CHECK(!decodeRoomCode("K7Q2-M9XA-3PF1U"));  // 'U' is not in the alphabet
+    CHECK(parseIPv4("192.168.1.23") == (std::array<std::uint8_t, 4>{192, 168, 1, 23}));
+    CHECK(!parseIPv4("192.168.1") && !parseIPv4("256.1.1.1") && !parseIPv4("a.b.c.d"));
+}
+
 void runSessionTests() {
+    testRoomCodes();
     testLocalAddress();
     testLoopbackSession();
     testConnectFailure();

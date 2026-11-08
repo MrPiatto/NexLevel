@@ -2,6 +2,10 @@
 
 #include "../net/connection.hpp"
 
+#include <nexlevel/core/session/room_code.hpp>
+
+#include <random>
+
 #include <chrono>
 #include <future>
 #include <thread>
@@ -30,6 +34,7 @@ struct SessionHost::Impl {
     net::NetThread net;
     std::optional<tcp::acceptor> acceptor;
     std::uint16_t port = 0;
+    std::uint16_t roomKey = 0;
     bool running = false;
 
     // Network thread only.
@@ -116,6 +121,10 @@ struct SessionHost::Impl {
                 sendTo(conn, MsgType::Refuse, encode(Refuse{RefuseReason::BadHello, target}), true);
                 return;
             }
+            if (hello->roomKey != roomKey) {
+                sendTo(conn, MsgType::Refuse, encode(Refuse{RefuseReason::WrongRoomCode, target}), true);
+                return;
+            }
             if (!canShareSession(hello->target, target)) {  // V1: same GD version only
                 sendTo(conn, MsgType::Refuse, encode(Refuse{RefuseReason::WrongGameVersion, target}), true);
                 return;
@@ -173,6 +182,7 @@ std::optional<std::uint16_t> SessionHost::start(std::uint16_t port, bool loopbac
         return std::nullopt;
     }
     m->port = m->acceptor->local_endpoint(ec).port();
+    m->roomKey = static_cast<std::uint16_t>(std::random_device{}() & kRoomKeyMask);
     m->acceptNext();
     m->net.start();
     m->running = true;
@@ -203,6 +213,7 @@ void SessionHost::stop() {
 
 bool SessionHost::running() const noexcept { return m->running; }
 std::uint16_t SessionHost::port() const noexcept { return m->port; }
+std::uint16_t SessionHost::roomKey() const noexcept { return m->roomKey; }
 
 std::vector<sync::NetId> SessionHost::pump() {
     std::vector<sync::NetId> changed;

@@ -23,7 +23,7 @@ enum class MsgType : std::uint16_t {
     Rejected = 12,  // host -> author: op refused, will never be sequenced
 };
 
-enum class RefuseReason : std::uint8_t { WrongGameVersion = 1, SessionFull = 2, BadHello = 3 };
+enum class RefuseReason : std::uint8_t { WrongGameVersion = 1, SessionFull = 2, BadHello = 3, WrongRoomCode = 4 };
 
 struct PeerInfo {
     sync::PeerId id = 0;
@@ -37,6 +37,7 @@ inline constexpr std::size_t kMaxRosterPeers = 64;
 
 struct Hello {
     GameTarget target = GameTarget::Unknown;
+    std::uint16_t roomKey = 0;
     std::string displayName;
 };
 struct Welcome {

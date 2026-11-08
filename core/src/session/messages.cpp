@@ -5,6 +5,7 @@ namespace nexlevel::session {
 std::vector<std::uint8_t> encode(const Hello& m) {
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(m.target));
+    w.u16(m.roomKey);
     w.str(m.displayName.substr(0, kMaxDisplayName));
     return w.take();
 }
@@ -46,6 +47,7 @@ std::optional<Hello> decodeHello(std::span<const std::uint8_t> p) {
     ByteReader r(p);
     Hello m;
     m.target = static_cast<GameTarget>(r.u8());
+    m.roomKey = r.u16();
     m.displayName = r.str(kMaxDisplayName);
     if (!r.atEnd()) return std::nullopt;
     return m;

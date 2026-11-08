@@ -2,6 +2,8 @@
 
 #include "../net/connection.hpp"
 
+#include <nexlevel/core/session/room_code.hpp>
+
 #include <chrono>
 #include <future>
 
@@ -33,6 +35,7 @@ struct SessionClient::Impl {
     std::optional<sync::ClientReplica> replica;
     std::optional<sync::NetIdAllocator> ids;
     std::vector<PeerInfo> peers;
+    std::uint16_t roomKey = 0;
 
     Impl(GameTarget t, std::string n) : target(t), name(std::move(n)) {}
 
@@ -60,7 +63,15 @@ SessionClient::~SessionClient() {
     m->net.stop();
 }
 
-void SessionClient::connect(const std::string& host, std::uint16_t port) {
+bool SessionClient::connectCode(std::string_view code) {
+    auto addr = decodeRoomCode(code);
+    if (!addr) return false;
+    connect(addr->ipString(), addr->port, addr->key);
+    return true;
+}
+
+void SessionClient::connect(const std::string& host, std::uint16_t port, std::uint16_t roomKey) {
+    m->roomKey = roomKey;
     m->state = ClientState::Connecting;
     m->error.clear();
     if (!m->netStarted) {
@@ -98,7 +109,7 @@ std::vector<sync::NetId> SessionClient::pump() {
         switch (e.kind) {
             case Impl::Event::Connected:
                 m->state = ClientState::Joining;
-                m->send(MsgType::Hello, encode(Hello{m->target, m->name}));
+                m->send(MsgType::Hello, encode(Hello{m->target, m->roomKey, m->name}));
                 break;
             case Impl::Event::ConnectFailed:
                 m->state = ClientState::Disconnected;
