@@ -15,10 +15,28 @@ foreach(_f ${_NL_CORE_FILES})
     endif()
 endforeach()
 
+# Standalone Asio (header-only, Boost Software License), pinned. Fetched at configure time
+# into the build tree (inside NEXLEVEL). Used only from core .cpp files.
+include(FetchContent)
+FetchContent_Declare(nexlevel_asio
+    URL https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-38-2.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR nexlevel-headers-only)  # never add_subdirectory() Asio; headers only
+FetchContent_MakeAvailable(nexlevel_asio)
+find_package(Threads REQUIRED)
+
 add_library(nexlevel_core STATIC
     src/bytes.cpp
     src/frame.cpp
+    src/net/loopback_probe.cpp
 )
+target_include_directories(nexlevel_core PRIVATE ${nexlevel_asio_SOURCE_DIR}/asio/include)
+target_compile_definitions(nexlevel_core PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
+target_link_libraries(nexlevel_core PUBLIC Threads::Threads)
+if(WIN32)
+    target_compile_definitions(nexlevel_core PRIVATE _WIN32_WINNT=0x0A00 WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_link_libraries(nexlevel_core PUBLIC ws2_32 mswsock)
+endif()
 target_include_directories(nexlevel_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(nexlevel_core PUBLIC cxx_std_20)
 set_target_properties(nexlevel_core PROPERTIES

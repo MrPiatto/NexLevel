@@ -1,6 +1,7 @@
 // Minimal dependency-free test runner for nexlevel_core.
 #include <nexlevel/core/bytes.hpp>
 #include <nexlevel/core/frame.hpp>
+#include <nexlevel/core/net/loopback_probe.hpp>
 #include <nexlevel/core/version.hpp>
 
 #include <cstdio>
@@ -102,6 +103,14 @@ static void testSessionCompatibility() {
     CHECK(!canShareSession(GameTarget::Unknown, GameTarget::Unknown));
 }
 
+static void testLoopbackProbe() {
+    auto r = net::runLoopbackProbe();
+    if (!r.ok) std::printf("  probe error: %s\n", r.error.c_str());
+    CHECK(r.ok);
+    CHECK(r.port != 0);
+    CHECK(r.bytesExchanged == 2 * (kFrameHeaderSize + 256));
+}
+
 int main() {
     testBytesRoundTrip();
     testBytesLittleEndian();
@@ -113,6 +122,7 @@ int main() {
     testFrameBadMagic();
     testFrameTooLarge();
     testSessionCompatibility();
+    testLoopbackProbe();
     std::printf("%d checks, %d failed\n", g_checks, g_failed);
     return g_failed == 0 ? 0 : 1;
 }
