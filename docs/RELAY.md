@@ -17,6 +17,15 @@ opening router ports does not help. The relay fixes this. The host and the playe
 
 ## Running a relay
 
+Fastest way: from this PC run
+
+    tools\relay-upload.ps1 -Server <server IP> -Key <path to the server's SSH key>
+
+It uploads the source, builds it on the server, installs it as a service and opens port 47800.
+It also handles the iptables rules on Oracle Cloud images.
+
+Manual way:
+
 Any always-on machine with a public IP address works, such as a small Linux VPS. Open TCP port
 **47800**.
 
