@@ -37,13 +37,13 @@ public:
     bool inSession() const;  // host room open, or client joined
 
     bool hostRoom(std::string* error);          // needs an attached editor
-    void join(const std::string& address);      // "ip" or "ip:port"
+    bool join(const std::string& roomCode);     // false: not a valid code
     void leave();                               // client: leave; host: close the room
     bool kick(sync::PeerId peer);
 
     std::vector<session::PeerInfo> peers() const;
     std::optional<sync::PeerId> selfId() const;
-    std::optional<std::string> hostAddress() const;  // host only: "192.168.1.5:47777"
+    std::optional<std::string> roomCode() const;     // host only: what players type to join
     std::string statusText() const;
     std::string displayName() const;
 
@@ -66,6 +66,7 @@ private:
     IEditorBridge* m_editor = nullptr;
     GJGameLevel* m_roomLevel = nullptr;  // retained while the room is open
     bool m_scheduled = false;
+    bool m_lastJoined = false;
     std::vector<session::PeerInfo> m_lastPeers;
 };
 

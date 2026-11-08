@@ -21,6 +21,8 @@ protected:
 
     void onHost(cocos2d::CCObject*);
     void onJoin(cocos2d::CCObject*);
+    void onPaste(cocos2d::CCObject*);
+    void onCopy(cocos2d::CCObject*);
     void onLeave(cocos2d::CCObject*);
     void onKick(cocos2d::CCObject* sender);
 
@@ -31,7 +33,7 @@ protected:
     }
 
     std::vector<cocos2d::CCNode*> m_dynamic;
-    geode::TextInput* m_ipInput = nullptr;
+    geode::TextInput* m_codeInput = nullptr;
     std::string m_shown;
 };
 

@@ -1,6 +1,7 @@
 #include "session_manager.hpp"
 
 #include <nexlevel/core/net/local_address.hpp>
+#include <nexlevel/core/session/room_code.hpp>
 
 #include <algorithm>
 
@@ -64,19 +65,16 @@ bool SessionManager::hostRoom(std::string* error) {
     return true;
 }
 
-void SessionManager::join(const std::string& address) {
-    if (role() != Role::None) return;
-    std::string host = address;
-    std::uint16_t port = kDefaultPort;
-    if (auto colon = address.rfind(':'); colon != std::string::npos) {
-        host = address.substr(0, colon);
-        try { port = static_cast<std::uint16_t>(std::stoi(address.substr(colon + 1))); } catch (...) {}
-    }
+bool SessionManager::join(const std::string& roomCode) {
+    if (role() != Role::None) return false;
+    if (!session::decodeRoomCode(roomCode)) return false;
     m_client = std::make_unique<session::SessionClient>(static_cast<GameTarget>(NEXLEVEL_TARGET), displayName());
     m_lastClientState = session::ClientState::Idle;
-    m_client->connect(host, port);
+    m_lastJoined = false;
+    m_client->connectCode(roomCode);
     ensureScheduled();
-    log::info("NexLevel: joining {}:{}", host, port);
+    log::info("NexLevel: joining room {}", roomCode);
+    return true;
 }
 
 void SessionManager::leave() {
@@ -106,10 +104,12 @@ std::optional<sync::PeerId> SessionManager::selfId() const {
     return std::nullopt;
 }
 
-std::optional<std::string> SessionManager::hostAddress() const {
+std::optional<std::string> SessionManager::roomCode() const {
     if (!m_host) return std::nullopt;
-    auto ip = net::primaryLocalIPv4();
-    return ip.value_or("this PC") + ":" + std::to_string(m_host->port());
+    // The code carries this PC's network address; players never see or type it.
+    auto ip = session::parseIPv4(net::primaryLocalIPv4().value_or("127.0.0.1"))
+                  .value_or(std::array<std::uint8_t, 4>{127, 0, 0, 1});
+    return session::encodeRoomCode(session::RoomAddress{ip, m_host->port(), m_host->roomKey()});
 }
 
 std::string SessionManager::statusText() const {
@@ -202,6 +202,7 @@ void SessionManager::tick(float) {
         m_lastClientState = state;
         switch (state) {
             case ClientState::Joined:
+                m_lastJoined = true;
                 notify("Joined the room", NotificationIcon::Success);
                 if (m_editor) m_editor->rebuildFromSession();
                 ids.clear();
@@ -212,6 +213,8 @@ void SessionManager::tick(float) {
                     auto host = m_client->hostTarget();
                     endClient(std::string("The host uses ") + std::string(toString(host.value_or(GameTarget::Unknown))) +
                                   " - same GD version required", NotificationIcon::Error);
+                } else if (reason == session::RefuseReason::WrongRoomCode) {
+                    endClient("Wrong room code - ask the host for the current one", NotificationIcon::Error);
                 } else if (reason == session::RefuseReason::SessionFull) {
                     endClient("The room is full", NotificationIcon::Error);
                 } else {
@@ -221,7 +224,11 @@ void SessionManager::tick(float) {
             }
             case ClientState::Kicked: endClient("You were removed from the room", NotificationIcon::Warning); return;
             case ClientState::RoomClosed: endClient("The host closed the room", NotificationIcon::Info); return;
-            case ClientState::Disconnected: endClient("Disconnected: " + m_client->lastError(), NotificationIcon::Error); return;
+            case ClientState::Disconnected:
+                // Friendly wording: players never see addresses or socket errors (they are in the log).
+                log::warn("NexLevel: connection lost: {}", m_client->lastError());
+                endClient(m_lastJoined ? "Connection to the room lost" : "Room not found - check the code", NotificationIcon::Error);
+                return;
             default: break;
         }
     }

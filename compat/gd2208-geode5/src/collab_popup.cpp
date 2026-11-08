@@ -4,6 +4,8 @@
 
 #include <Geode/modify/EditorPauseLayer.hpp>
 
+#include <cctype>
+
 using namespace geode::prelude;
 
 namespace nexlevel::mod {
@@ -11,6 +13,7 @@ namespace nexlevel::mod {
 namespace {
 const ccColor3B kPurple{150, 70, 255};
 const ccColor3B kPurpleSoft{190, 140, 255};
+const ccColor3B kPurpleDark{90, 40, 160};
 const ccColor3B kPanel{14, 6, 28};
 const ccColor3B kGrey{170, 160, 190};
 const ccColor3B kRed{220, 50, 90};
@@ -72,10 +75,10 @@ void CollabPopup::refresh(float) {
 }
 
 void CollabPopup::rebuild() {
-    std::string keptIp = m_ipInput ? std::string(m_ipInput->getString()) : Mod::get()->getSavedValue<std::string>("last-ip", "");
+    std::string keptCode = m_codeInput ? std::string(m_codeInput->getString()) : Mod::get()->getSavedValue<std::string>("last-code", "");
     for (auto* n : m_dynamic) n->removeFromParent();
     m_dynamic.clear();
-    m_ipInput = nullptr;
+    m_codeInput = nullptr;
     m_shown = signature();
 
     auto* sm = SessionManager::get();
@@ -85,28 +88,33 @@ void CollabPopup::rebuild() {
 
     if (role == Role::None) {
         m_buttonMenu->addChildAtPosition(track(button("Host room", kPurple, .85f, this, menu_selector(CollabPopup::onHost))),
-            Anchor::Center, {0.f, 38.f});
-        m_mainLayer->addChildAtPosition(track(label("Open the room from this level", "chatFont.fnt", .65f, kGrey)),
-            Anchor::Center, {0.f, 10.f});
+            Anchor::Center, {0.f, 42.f});
+        m_mainLayer->addChildAtPosition(track(label("- or join a friend -", "chatFont.fnt", .65f, kGrey)),
+            Anchor::Center, {0.f, 8.f});
 
-        m_ipInput = track(TextInput::create(190.f, "Host IP (e.g. 192.168.1.5)"));
-        m_ipInput->setFilter("0123456789.:abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-");
-        m_ipInput->setMaxCharCount(64);
-        m_ipInput->setString(keptIp);
-        m_mainLayer->addChildAtPosition(m_ipInput, Anchor::Center, {-50.f, -40.f});
+        m_codeInput = track(TextInput::create(170.f, "Room code"));
+        m_codeInput->setFilter("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ- ");
+        m_codeInput->setMaxCharCount(20);
+        m_codeInput->setString(keptCode);
+        m_mainLayer->addChildAtPosition(m_codeInput, Anchor::Center, {-60.f, -26.f});
+        m_buttonMenu->addChildAtPosition(track(button("Paste", kPurpleDark, .5f, this, menu_selector(CollabPopup::onPaste))),
+            Anchor::Center, {64.f, -26.f});
         m_buttonMenu->addChildAtPosition(track(button("Join", kPurple, .7f, this, menu_selector(CollabPopup::onJoin))),
-            Anchor::Center, {115.f, -40.f});
+            Anchor::Center, {130.f, -26.f});
 
-        m_mainLayer->addChildAtPosition(track(label("Joining replaces this editor's level - use an empty one", "chatFont.fnt", .55f, kRed)),
-            Anchor::Center, {0.f, -70.f});
-        m_mainLayer->addChildAtPosition(track(label("Same GD version required - port 47777", "chatFont.fnt", .55f, kGrey)),
-            Anchor::Bottom, {0.f, 22.f});
+        m_mainLayer->addChildAtPosition(track(label("Joining replaces the level open in your editor", "chatFont.fnt", .55f, kRed)),
+            Anchor::Center, {0.f, -58.f});
+        m_mainLayer->addChildAtPosition(track(label("Everyone needs the same GD version", "chatFont.fnt", .55f, kGrey)),
+            Anchor::Bottom, {0.f, 20.f});
         return;
     }
 
     if (role == Role::Host) {
-        if (auto addr = sm->hostAddress()) {
-            m_mainLayer->addChildAtPosition(track(label("Your address: " + *addr, "goldFont.fnt", .5f)), Anchor::Top, {0.f, -88.f});
+        if (auto code = sm->roomCode()) {
+            m_mainLayer->addChildAtPosition(track(label("ROOM CODE", "goldFont.fnt", .4f, kGrey)), Anchor::Top, {0.f, -84.f});
+            m_mainLayer->addChildAtPosition(track(label(*code, "bigFont.fnt", .6f, kPurpleSoft)), Anchor::Top, {-30.f, -104.f});
+            m_buttonMenu->addChildAtPosition(track(button("Copy", kPurpleDark, .5f, this, menu_selector(CollabPopup::onCopy))),
+                Anchor::Top, {125.f, -104.f});
         }
     }
 
@@ -116,7 +124,7 @@ void CollabPopup::rebuild() {
     const std::size_t maxRows = 5;
     for (std::size_t i = 0; i < peers.size() && i < maxRows; ++i) {
         const auto& p = peers[i];
-        float y = 22.f - static_cast<float>(i) * 26.f;
+        float y = (role == Role::Host ? 8.f : 22.f) - static_cast<float>(i) * 24.f;
         std::string name = p.name;
         if (self && p.id == *self) name += " (you)";
         auto* nameLabel = track(label(name, "bigFont.fnt", .4f));
@@ -132,7 +140,7 @@ void CollabPopup::rebuild() {
     }
     if (peers.size() > maxRows) {
         m_mainLayer->addChildAtPosition(track(label("+" + std::to_string(peers.size() - maxRows) + " more", "chatFont.fnt", .6f, kGrey)),
-            Anchor::Center, {0.f, 22.f - static_cast<float>(maxRows) * 26.f});
+            Anchor::Center, {0.f, (role == Role::Host ? 8.f : 22.f) - static_cast<float>(maxRows) * 24.f});
     }
 
     const char* leaveText = role == Role::Host ? "Close room" : "Leave";
@@ -147,7 +155,7 @@ void CollabPopup::rebuild() {
 void CollabPopup::onHost(CCObject*) {
     std::string err;
     if (SessionManager::get()->hostRoom(&err)) {
-        notify("Room open - share your address", NotificationIcon::Success);
+        notify("Room open - share the room code", NotificationIcon::Success);
     } else {
         notify(err, NotificationIcon::Error);
     }
@@ -155,16 +163,35 @@ void CollabPopup::onHost(CCObject*) {
 }
 
 void CollabPopup::onJoin(CCObject*) {
-    if (!m_ipInput) return;
-    std::string ip = m_ipInput->getString();
-    while (!ip.empty() && ip.back() == ' ') ip.pop_back();
-    if (ip.empty()) {
-        notify("Enter the host's IP address", NotificationIcon::Warning);
+    if (!m_codeInput) return;
+    std::string code = m_codeInput->getString();
+    if (code.empty()) {
+        notify("Enter the room code", NotificationIcon::Warning);
         return;
     }
-    Mod::get()->setSavedValue<std::string>("last-ip", ip);
-    SessionManager::get()->join(ip);
+    if (!SessionManager::get()->join(code)) {
+        notify("That room code isn't valid - check for typos", NotificationIcon::Error);
+        return;
+    }
+    Mod::get()->setSavedValue<std::string>("last-code", code);
     rebuild();
+}
+
+void CollabPopup::onPaste(CCObject*) {
+    if (!m_codeInput) return;
+    std::string text = utils::clipboard::read();
+    std::string cleaned;
+    for (char c : text) {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '-') cleaned += c;
+    }
+    m_codeInput->setString(cleaned.substr(0, 20));
+}
+
+void CollabPopup::onCopy(CCObject*) {
+    if (auto code = SessionManager::get()->roomCode()) {
+        utils::clipboard::write(*code);
+        notify("Room code copied", NotificationIcon::Success);
+    }
 }
 
 void CollabPopup::onLeave(CCObject*) {
