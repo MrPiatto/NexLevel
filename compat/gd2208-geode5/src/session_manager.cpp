@@ -1,9 +1,12 @@
 #include "session_manager.hpp"
 
 #include <nexlevel/core/net/local_address.hpp>
+#include <nexlevel/core/relay/protocol.hpp>
 #include <nexlevel/core/session/room_code.hpp>
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <thread>
 
 using namespace geode::prelude;
@@ -13,6 +16,20 @@ namespace nexlevel::mod {
 void notify(const std::string& text, NotificationIcon icon) {
     Notification::create(text, icon)->show();
 }
+
+namespace {
+// "relay-server" setting: host or host:port. nullopt when empty.
+std::optional<std::pair<std::string, std::uint16_t>> relaySetting() {
+    auto v = Mod::get()->getSettingValue<std::string>("relay-server");
+    v.erase(std::remove_if(v.begin(), v.end(), [](char c) { return std::isspace(static_cast<unsigned char>(c)); }), v.end());
+    if (v.empty()) return std::nullopt;
+    auto colon = v.rfind(':');
+    if (colon == std::string::npos) return std::pair{v, relay::kDefaultPort};
+    int port = std::atoi(v.substr(colon + 1).c_str());
+    if (port <= 0 || port > 65535) return std::nullopt;
+    return std::pair{v.substr(0, colon), static_cast<std::uint16_t>(port)};
+}
+} // namespace
 
 SessionManager* SessionManager::get() {
     static SessionManager* instance = [] {
@@ -64,6 +81,10 @@ bool SessionManager::hostRoom(std::string* error) {
     m_host = std::move(host);
     m_mapper = std::make_unique<net::PortMapper>();
     m_mapper->start(m_host->port());
+    if (auto r = relaySetting()) {
+        m_host->startRelay(r->first, r->second);
+        log::info("NexLevel: opening the room on relay {}:{}", r->first, r->second);
+    }
     m_roomLevel = m_editor->level();
     if (m_roomLevel) m_roomLevel->retain();
     ensureScheduled();
@@ -72,10 +93,17 @@ bool SessionManager::hostRoom(std::string* error) {
     return true;
 }
 
-bool SessionManager::join(const std::string& roomCode) {
-    if (role() != Role::None) return false;
-    if (!session::decodeRoomCode(roomCode)) return false;
+bool SessionManager::join(const std::string& roomCode, std::string* error) {
+    if (role() != Role::None) { if (error) *error = "Already in a room"; return false; }
+    auto addr = session::decodeRoomCode(roomCode);
+    if (!addr) { if (error) *error = "That room code isn't valid - check for typos"; return false; }
+    auto relayServer = relaySetting();
+    if (addr->relayRoom != 0 && !relayServer) {
+        if (error) *error = "This code needs the relay server - set it in the NexLevel settings";
+        return false;
+    }
     m_client = std::make_unique<session::SessionClient>(static_cast<GameTarget>(NEXLEVEL_TARGET), displayName());
+    if (relayServer) m_client->setRelayServer(relayServer->first, relayServer->second);
     m_lastClientState = session::ClientState::Idle;
     m_lastJoined = false;
     m_client->connectCode(roomCode);
@@ -120,13 +148,21 @@ void SessionManager::releaseMapper() {
 
 std::optional<std::string> SessionManager::roomCode() const {
     if (!m_host) return std::nullopt;
+    // Relay first: it works for everyone, on any network.
+    if (m_host->relayRoomId() != 0) {
+        session::RoomAddress r;
+        r.relayRoom = m_host->relayRoomId();
+        r.key = m_host->roomKey();
+        return session::encodeRoomCode(r);
+    }
+    const bool relayPending = m_host->relayState() != session::RelayState::Off && m_host->relayError().empty();
     // The code carries this PC's address; players never see or type it.
     auto lan = session::parseIPv4(net::primaryLocalIPv4().value_or("127.0.0.1"))
                    .value_or(std::array<std::uint8_t, 4>{127, 0, 0, 1});
     session::RoomAddress addr{lan, m_host->port(), m_host->roomKey()};
     if (m_mapper) {
         const auto st = m_mapper->state();
-        if (st == net::MapState::Working) return std::nullopt;
+        if (st == net::MapState::Working || (relayPending && st != net::MapState::Mapped)) return std::nullopt;
         if (st == net::MapState::Mapped) {
             if (auto pub = m_mapper->externalIPv4()) {
                 addr.ipv4 = *pub;
@@ -139,12 +175,18 @@ std::optional<std::string> SessionManager::roomCode() const {
 }
 
 std::string SessionManager::onlineText() const {
-    if (!m_host || !m_mapper) return {};
+    if (!m_host) return {};
+    if (m_host->relayRoomId() != 0) {
+        return m_host->relayState() == session::RelayState::Ready ? "Online: friends on any network can join"
+                                                                   : "Reconnecting to the relay...";
+    }
+    if (m_host->relayState() != session::RelayState::Off && m_host->relayError().empty()) return "Connecting to the relay...";
+    if (!m_mapper) return {};
     switch (m_mapper->state()) {
         case net::MapState::Working: return "Opening your router for online play...";
         case net::MapState::Mapped: return "Online: friends anywhere can join";
         case net::MapState::NoGateway: return "Same Wi-Fi only: router has UPnP turned off";
-        case net::MapState::DoubleNat: return "Same Wi-Fi only: your provider blocks hosting";
+        case net::MapState::DoubleNat: return "Same Wi-Fi only: your network blocks hosting";
         case net::MapState::Failed: return "Same Wi-Fi only: router refused to open a port";
         case net::MapState::Idle: break;
     }
@@ -279,7 +321,11 @@ void SessionManager::tick(float) {
             case ClientState::Disconnected:
                 // Friendly wording: players never see addresses or socket errors (they are in the log).
                 log::warn("NexLevel: connection lost: {}", m_client->lastError());
-                endClient(m_lastJoined ? "Connection to the room lost" : "Room not found - check the code", NotificationIcon::Error);
+                endClient(m_lastJoined ? "Connection to the room lost"
+                          : m_client->lastError().find("did not answer") != std::string::npos ? "The host isn't responding - try again"
+                          : m_client->lastError().find("relay: relay busy") != std::string::npos ? "The relay is busy - try again in a minute"
+                          : "Room not found - check the code",
+                          NotificationIcon::Error);
                 return;
             default: break;
         }

@@ -12,6 +12,8 @@
 
 namespace nexlevel::session {
 
+enum class RelayState : std::uint8_t { Off, Connecting, Ready, Reconnecting };
+
 class SessionHost {
 public:
     static constexpr sync::PeerId kHostPeer = 1;
@@ -30,6 +32,15 @@ public:
     bool running() const noexcept;
     std::uint16_t port() const noexcept;
     std::uint16_t roomKey() const noexcept;  // random per room; players must present it (room code)
+
+    // Also make the room reachable through a Forg3 relay, which works from any network (mobile
+    // data, CGNAT, strict NAT). Call after start(). Non-blocking; reconnects on its own and keeps
+    // the same relay room id when it can. Players use relayRoomId() in the room code.
+    void startRelay(const std::string& relayHost, std::uint16_t relayPort);
+    RelayState relayState() const noexcept;
+    std::uint32_t relayRoomId() const noexcept;  // 0 until the relay assigned one
+    std::string relayError() const;
+    void simulateRelayDrop();  // test hook: cut the relay control connection
 
     // Process network events. Returns ids changed by other peers' ops (apply them to the host's editor).
     std::vector<sync::NetId> pump();

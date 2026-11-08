@@ -1,5 +1,9 @@
 # Playing with people outside your network
 
+With a **relay server** configured (see `RELAY.md`), rooms get a 10-character code that works for
+everyone, on any network, including mobile data. That is the recommended setup. Without a relay,
+NexLevel falls back to opening the router port, as described below.
+
 ## What NexLevel does on its own
 
 When you press **Host room**, NexLevel asks your router to forward the room port to your PC.
@@ -18,7 +22,7 @@ It uses UPnP, the same mechanism most online games and consoles use.
 | Message | Cause | Fix |
 |---|---|---|
 | router has UPnP turned off | The router does not answer UPnP | Turn on UPnP in the router settings, or let another player host |
-| your provider blocks hosting | The router itself is behind the provider's NAT (CGNAT, common on mobile and fibre ISPs) | Another player hosts, or wait for the NexLevel relay server (planned) |
+| your network blocks hosting | The router itself is behind the provider's NAT (CGNAT, common on mobile and fibre ISPs) | Use a relay server (`RELAY.md`) |
 | router refused to open a port | The router rejected the request | Another player hosts |
 
 The first time you host, **Windows Firewall** may ask whether Geometry Dash can accept

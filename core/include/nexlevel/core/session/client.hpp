@@ -15,6 +15,12 @@ namespace nexlevel::session {
 // accepting local edits, which are sent once it is back in the room.
 enum class ClientState : std::uint8_t { Idle, Connecting, Joining, Joined, Reconnecting, Refused, Kicked, RoomClosed, Disconnected };
 
+struct ConnectTarget {
+    std::string host;
+    std::uint16_t port = 0;
+    std::uint32_t relayRoom = 0;  // non-zero: host:port is a relay, join this room through it
+};
+
 class SessionClient {
 public:
     SessionClient(GameTarget target, std::string displayName);
@@ -24,8 +30,11 @@ public:
 
     void connect(const std::string& host, std::uint16_t port, std::uint16_t roomKey);
     // Several addresses for the same room (e.g. public + LAN): tried in parallel, first wins.
-    void connectTargets(std::vector<std::pair<std::string, std::uint16_t>> targets, std::uint16_t roomKey);
-    // Join with a room code. Returns false (and does nothing) if the code is malformed.
+    void connectTargets(std::vector<ConnectTarget> targets, std::uint16_t roomKey);
+    // Relay used for 10-character (relay) room codes. Must match the host's relay.
+    void setRelayServer(const std::string& host, std::uint16_t port);
+    // Join with a room code. Returns false (and does nothing) if the code is malformed, or is a
+    // relay code and no relay server was set (lastError() says which).
     bool connectCode(std::string_view code);
     void disconnect();
 

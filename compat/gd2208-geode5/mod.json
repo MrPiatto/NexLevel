@@ -10,5 +10,14 @@
 	"name": "NexLevel",
 	"version": "v0.1.0-alpha.1",
 	"developer": "Forg3 Studios",
-	"description": "Create Together. Build Beyond. Real-time collaborative level editing."
+	"description": "Create Together. Build Beyond. Real-time collaborative level editing.",
+	"settings": {
+		"relay-server": {
+			"type": "string",
+			"name": "Relay server",
+			"description": "Address of the NexLevel relay (host or host:port). With a relay, rooms work from any network, including mobile data. Everyone in a room must use the same relay. Leave empty to play without one.",
+			"default": "",
+			"filter": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:"
+		}
+	}
 }

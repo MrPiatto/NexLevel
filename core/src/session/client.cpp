@@ -3,6 +3,7 @@
 #include "../net/connection.hpp"
 
 #include <nexlevel/core/crypto/secure_channel.hpp>
+#include <nexlevel/core/relay/protocol.hpp>
 #include <nexlevel/core/session/room_code.hpp>
 #include <nexlevel/core/net/local_address.hpp>
 
@@ -18,7 +19,7 @@ using Clock = std::chrono::steady_clock;
 namespace {
 constexpr auto kRetryInterval = std::chrono::seconds(1);
 constexpr int kMaxReconnectAttempts = 30;
-constexpr auto kConnectTimeout = std::chrono::seconds(6);
+constexpr auto kConnectTimeout = std::chrono::seconds(10);
 }
 
 struct SessionClient::Impl {
@@ -47,7 +48,9 @@ struct SessionClient::Impl {
     std::optional<sync::NetIdAllocator> ids;
     std::vector<PeerInfo> peers;
     // Addresses to try for this room, raced in parallel; the first to connect wins.
-    std::vector<std::pair<std::string, std::uint16_t>> targets;
+    std::vector<ConnectTarget> targets;
+    std::string relayHost;
+    std::uint16_t relayPort = 0;
     std::uint16_t roomKey = 0;
     std::uint64_t resumeToken = 0;
     std::uint32_t generation = 0;  // ignores events from connections that were replaced
@@ -114,9 +117,9 @@ struct SessionClient::Impl {
                 finishFail();
             });
             if (targets.empty()) { race->lastError = "no address"; finishFail(); return; }
-            for (const auto& [h, p] : targets) {
+            for (const auto& t : targets) {
                 auto resolver = std::make_shared<tcp::resolver>(net.io());
-                resolver->async_resolve(h, std::to_string(p), [this, gen, race, resolver, finishFail](std::error_code ec, tcp::resolver::results_type results) {
+                resolver->async_resolve(t.host, std::to_string(t.port), [this, gen, race, resolver, finishFail, relayRoom = t.relayRoom](std::error_code ec, tcp::resolver::results_type results) {
                     if (race->done) return;
                     if (ec) {
                         race->lastError = "resolve: " + ec.message();
@@ -125,13 +128,9 @@ struct SessionClient::Impl {
                     }
                     auto socket = std::make_shared<tcp::socket>(net.io());
                     race->sockets.push_back(socket);
-                    asio::async_connect(*socket, results, [this, gen, race, socket, finishFail](std::error_code ec2, const tcp::endpoint&) {
-                        if (race->done) return;
-                        if (ec2) {
-                            race->lastError = "connect: " + ec2.message();
-                            if (--race->pending == 0) finishFail();
-                            return;
-                        }
+                    // The winner becomes the session connection.
+                    auto win = [this, gen, race, socket] {
+                        if (race->done) { std::error_code cec; socket->close(cec); return; }
                         race->done = true;
                         race->timer->cancel();
                         for (auto& other : race->sockets) {
@@ -143,6 +142,36 @@ struct SessionClient::Impl {
                             [this](std::uint32_t g, std::string r) { events.push({Event::Closed, g, {}, std::move(r)}); });
                         conn->start();
                         events.push({Event::Connected, gen, {}, {}});
+                    };
+                    auto lose = [race, finishFail](std::string why) {
+                        if (race->done) return;
+                        race->lastError = std::move(why);
+                        if (--race->pending == 0) finishFail();
+                    };
+                    asio::async_connect(*socket, results, [socket, race, win, lose, relayRoom](std::error_code ec2, const tcp::endpoint&) {
+                        if (race->done) return;
+                        if (ec2) { lose("connect: " + ec2.message()); return; }
+                        if (relayRoom == 0) { win(); return; }
+                        // Through the relay: ask for the room, wait until the host is on the line.
+                        auto out = std::make_shared<std::vector<std::uint8_t>>(relay::encode(relay::Message{relay::Kind::Join, relayRoom}));
+                        asio::async_write(*socket, asio::buffer(*out), [socket, race, win, lose, out](std::error_code wec, std::size_t) {
+                            if (race->done) return;
+                            if (wec) { lose("relay: " + wec.message()); return; }
+                            auto hdr = std::make_shared<std::array<std::uint8_t, relay::kHeaderSize>>();
+                            asio::async_read(*socket, asio::buffer(*hdr), [socket, race, win, lose, hdr](std::error_code rec, std::size_t) {
+                                if (race->done) return;
+                                if (rec) { lose("relay: " + rec.message()); return; }
+                                auto kind = relay::decodeHeader(*hdr);
+                                if (kind == relay::Kind::Paired) { win(); return; }
+                                if (kind != relay::Kind::Error) { lose("relay: bad reply"); return; }
+                                auto code = std::make_shared<std::array<std::uint8_t, 1>>();
+                                asio::async_read(*socket, asio::buffer(*code), [race, lose, code](std::error_code cec, std::size_t) {
+                                    if (race->done) return;
+                                    auto msg = cec ? std::nullopt : relay::decodeBody(relay::Kind::Error, *code);
+                                    lose(msg ? std::string("relay: ") + relay::toString(msg->error) : std::string("relay: closed"));
+                                });
+                            });
+                        });
                     });
                 });
             }
@@ -221,7 +250,12 @@ SessionClient::~SessionClient() {
 bool SessionClient::connectCode(std::string_view code) {
     auto addr = decodeRoomCode(code);
     if (!addr) return false;
-    std::vector<std::pair<std::string, std::uint16_t>> targets{{addr->ipString(), addr->port}};
+    if (addr->relayRoom != 0) {
+        if (m->relayHost.empty()) { m->error = "no relay server configured"; return false; }
+        connectTargets({ConnectTarget{m->relayHost, m->relayPort, addr->relayRoom}}, addr->key);
+        return true;
+    }
+    std::vector<ConnectTarget> targets{{addr->ipString(), addr->port, 0}};
     if (addr->lanOctet != 0) {
         // Online code: also try the host's LAN address in case we are on the same network
         // (assumes the usual /24 home network).
@@ -230,7 +264,7 @@ bool SessionClient::connectCode(std::string_view code) {
                 std::array<std::uint8_t, 4> lan{(*ip)[0], (*ip)[1], (*ip)[2], addr->lanOctet};
                 RoomAddress l;
                 l.ipv4 = lan;
-                if (lan != addr->ipv4) targets.push_back({l.ipString(), addr->port});
+                if (lan != addr->ipv4) targets.push_back({l.ipString(), addr->port, 0});
             }
         }
     }
@@ -239,10 +273,15 @@ bool SessionClient::connectCode(std::string_view code) {
 }
 
 void SessionClient::connect(const std::string& host, std::uint16_t port, std::uint16_t roomKey) {
-    connectTargets({{host, port}}, roomKey);
+    connectTargets({ConnectTarget{host, port, 0}}, roomKey);
 }
 
-void SessionClient::connectTargets(std::vector<std::pair<std::string, std::uint16_t>> targets, std::uint16_t roomKey) {
+void SessionClient::setRelayServer(const std::string& host, std::uint16_t port) {
+    m->relayHost = host;
+    m->relayPort = port;
+}
+
+void SessionClient::connectTargets(std::vector<ConnectTarget> targets, std::uint16_t roomKey) {
     m->targets = std::move(targets);
     m->roomKey = roomKey;
     m->state = ClientState::Connecting;

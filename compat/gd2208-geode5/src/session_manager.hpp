@@ -38,7 +38,7 @@ public:
     bool inSession() const;  // host room open, or client joined
 
     bool hostRoom(std::string* error);          // needs an attached editor
-    bool join(const std::string& roomCode);     // false: not a valid code
+    bool join(const std::string& roomCode, std::string* error = nullptr);  // false: cannot join (error says why)
     void leave();                               // client: leave; host: close the room
     bool kick(sync::PeerId peer);
 

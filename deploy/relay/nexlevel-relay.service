@@ -1,0 +1,23 @@
+# systemd unit for a relay built without Docker:
+#   cmake -S core -B build/relay -DCMAKE_BUILD_TYPE=Release -DNEXLEVEL_BUILD_TESTS=OFF
+#   cmake --build build/relay --target nexlevel_relay
+#   sudo install build/relay/nexlevel_relay /usr/local/bin/
+#   sudo cp deploy/relay/nexlevel-relay.service /etc/systemd/system/ && sudo systemctl enable --now nexlevel-relay
+[Unit]
+Description=NexLevel relay server (Forg3 Studios)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/nexlevel_relay --port 47800
+Restart=always
+RestartSec=2
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

@@ -113,7 +113,7 @@ void CollabPopup::rebuild() {
     if (role == Role::Host) {
         m_mainLayer->addChildAtPosition(track(label("ROOM CODE", "goldFont.fnt", .4f, kGrey)), Anchor::Top, {0.f, -84.f});
         if (auto code = sm->roomCode()) {
-            const float scale = code->size() > 15 ? .52f : .6f;  // online codes are 2 characters longer
+            const float scale = code->size() > 15 ? .52f : .6f;  // direct online codes are 2 characters longer
             m_mainLayer->addChildAtPosition(track(label(*code, "bigFont.fnt", scale, kPurpleSoft)), Anchor::Top, {-30.f, -104.f});
             m_buttonMenu->addChildAtPosition(track(button("Copy", kPurpleDark, .5f, this, menu_selector(CollabPopup::onCopy))),
                 Anchor::Top, {125.f, -104.f});
@@ -176,8 +176,9 @@ void CollabPopup::onJoin(CCObject*) {
         notify("Enter the room code", NotificationIcon::Warning);
         return;
     }
-    if (!SessionManager::get()->join(code)) {
-        notify("That room code isn't valid - check for typos", NotificationIcon::Error);
+    std::string error;
+    if (!SessionManager::get()->join(code, &error)) {
+        notify(error, NotificationIcon::Error);
         return;
     }
     Mod::get()->setSavedValue<std::string>("last-code", code);

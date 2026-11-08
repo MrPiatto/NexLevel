@@ -3,11 +3,15 @@
 #include "../net/connection.hpp"
 
 #include <nexlevel/core/crypto/secure_channel.hpp>
+#include <nexlevel/core/relay/protocol.hpp>
 #include <nexlevel/core/session/room_code.hpp>
+
+#include <atomic>
 
 #include <chrono>
 #include <future>
 #include <map>
+#include <mutex>
 #include <thread>
 #include <unordered_map>
 
@@ -70,19 +74,155 @@ struct SessionHost::Impl {
                 if (ec != asio::error::operation_aborted && acceptor && acceptor->is_open()) acceptNext();
                 return;
             }
-            auto id = nextConnId++;
-            auto c = std::make_shared<net::Connection>(
-                std::move(socket), id,
-                [this](std::uint32_t i, Frame f) { events.push({Event::FrameIn, i, std::move(f), {}}); },
-                [this](std::uint32_t i, std::string r) {
-                    conns.erase(i);
-                    events.push({Event::Closed, i, {}, std::move(r)});
-                });
-            conns.emplace(id, c);
-            events.push({Event::Connected, id, {}, {}});
-            c->start();
+            adopt(std::move(socket));
             acceptNext();
         });
+    }
+
+    // A player connection, accepted locally or opened through the relay. Network thread.
+    void adopt(tcp::socket socket) {
+        auto id = nextConnId++;
+        auto c = std::make_shared<net::Connection>(
+            std::move(socket), id,
+            [this](std::uint32_t i, Frame f) { events.push({Event::FrameIn, i, std::move(f), {}}); },
+            [this](std::uint32_t i, std::string r) {
+                conns.erase(i);
+                events.push({Event::Closed, i, {}, std::move(r)});
+            });
+        conns.emplace(id, c);
+        events.push({Event::Connected, id, {}, {}});
+        c->start();
+    }
+
+    // ---- relay link (network thread, except the atomics/err read by the main thread) ----
+    std::string relayHost;
+    std::uint16_t relayPort = 0;
+    bool relayEnabled = false;
+    std::uint32_t relayGen = 0;
+    std::uint32_t reclaimId = 0;
+    std::uint64_t reclaimSecret = 0;
+    std::shared_ptr<tcp::socket> relaySock;
+    std::optional<asio::steady_timer> relayRetry;
+    std::optional<asio::steady_timer> relayPing;
+    std::atomic<RelayState> relayStateA{RelayState::Off};
+    std::atomic<std::uint32_t> relayRoomA{0};
+    mutable std::mutex relayErrMutex;
+    std::string relayErr;
+
+    void setRelayError(std::string e) {
+        std::lock_guard lk(relayErrMutex);
+        relayErr = std::move(e);
+    }
+
+    void relayConnect() {
+        if (!relayEnabled) return;
+        const auto gen = ++relayGen;
+        auto resolver = std::make_shared<tcp::resolver>(net.io());
+        resolver->async_resolve(relayHost, std::to_string(relayPort), [this, gen, resolver](std::error_code ec, tcp::resolver::results_type results) {
+            if (gen != relayGen) return;
+            if (ec) { relayLost("relay: " + ec.message()); return; }
+            auto sock = std::make_shared<tcp::socket>(net.io());
+            asio::async_connect(*sock, results, [this, gen, sock](std::error_code cec, const tcp::endpoint&) {
+                if (gen != relayGen) return;
+                if (cec) { relayLost("relay: " + cec.message()); return; }
+                relaySock = sock;
+                auto out = std::make_shared<std::vector<std::uint8_t>>(relay::encode(relay::Message{relay::Kind::OpenRoom, reclaimId, reclaimSecret}));
+                asio::async_write(*sock, asio::buffer(*out), [this, gen, sock, out](std::error_code wec, std::size_t) {
+                    if (gen != relayGen) return;
+                    if (wec) { relayLost("relay: " + wec.message()); return; }
+                    relayRead(gen, sock);
+                });
+            });
+        });
+    }
+
+    void relayRead(std::uint32_t gen, std::shared_ptr<tcp::socket> sock) {
+        auto hdr = std::make_shared<std::array<std::uint8_t, relay::kHeaderSize>>();
+        asio::async_read(*sock, asio::buffer(*hdr), [this, gen, sock, hdr](std::error_code ec, std::size_t) {
+            if (gen != relayGen) return;
+            if (ec) { relayLost("relay connection lost"); return; }
+            auto kind = relay::decodeHeader(*hdr);
+            if (!kind) { relayLost("bad relay reply"); return; }
+            auto body = std::make_shared<std::vector<std::uint8_t>>(*relay::bodySize(*kind));
+            auto handle = [this, gen, sock, kind, body] {
+                auto msg = relay::decodeBody(*kind, *body);
+                if (!msg) { relayLost("bad relay reply"); return; }
+                switch (msg->kind) {
+                    case relay::Kind::RoomOpened:
+                        reclaimId = msg->roomId;
+                        reclaimSecret = msg->secret;
+                        relayRoomA = msg->roomId;
+                        relayStateA = RelayState::Ready;
+                        setRelayError({});
+                        schedulePing(gen, sock);
+                        break;
+                    case relay::Kind::Incoming: openRelayData(msg->stream); break;
+                    case relay::Kind::Pong: break;
+                    case relay::Kind::Error: relayLost(std::string("relay: ") + relay::toString(msg->error)); return;
+                    default: relayLost("unexpected relay message"); return;
+                }
+                relayRead(gen, sock);
+            };
+            if (body->empty()) { handle(); return; }
+            asio::async_read(*sock, asio::buffer(*body), [this, gen, handle](std::error_code bec, std::size_t) {
+                if (gen != relayGen) return;
+                if (bec) { relayLost("relay connection lost"); return; }
+                handle();
+            });
+        });
+    }
+
+    void schedulePing(std::uint32_t gen, std::shared_ptr<tcp::socket> sock) {
+        relayPing.emplace(net.io(), std::chrono::seconds(15));
+        relayPing->async_wait([this, gen, sock](std::error_code ec) {
+            if (ec || gen != relayGen) return;
+            auto out = std::make_shared<std::vector<std::uint8_t>>(relay::encode(relay::Message{relay::Kind::Ping}));
+            asio::async_write(*sock, asio::buffer(*out), [this, gen, sock, out](std::error_code wec, std::size_t) {
+                if (gen != relayGen) return;
+                if (wec) { relayLost("relay connection lost"); return; }
+                schedulePing(gen, sock);
+            });
+        });
+    }
+
+    void openRelayData(std::uint32_t stream) {
+        auto resolver = std::make_shared<tcp::resolver>(net.io());
+        const auto roomId = reclaimId;
+        const auto secret = reclaimSecret;
+        resolver->async_resolve(relayHost, std::to_string(relayPort), [this, resolver, roomId, secret, stream](std::error_code ec, tcp::resolver::results_type results) {
+            if (ec || !relayEnabled) return;
+            auto sock = std::make_shared<tcp::socket>(net.io());
+            asio::async_connect(*sock, results, [this, sock, roomId, secret, stream](std::error_code cec, const tcp::endpoint&) {
+                if (cec || !relayEnabled) return;
+                auto out = std::make_shared<std::vector<std::uint8_t>>(relay::encode(relay::Message{relay::Kind::Accept, roomId, secret, stream}));
+                asio::async_write(*sock, asio::buffer(*out), [this, sock, out](std::error_code wec, std::size_t) {
+                    if (wec || !relayEnabled) return;
+                    adopt(std::move(*sock));
+                });
+            });
+        });
+    }
+
+    void relayLost(std::string reason) {
+        ++relayGen;  // ignore callbacks from the old connection
+        if (relaySock) { std::error_code ec; relaySock->close(ec); relaySock.reset(); }
+        if (relayPing) relayPing->cancel();
+        setRelayError(std::move(reason));
+        if (!relayEnabled) return;
+        relayStateA = relayRoomA.load() != 0 ? RelayState::Reconnecting : RelayState::Connecting;
+        relayRetry.emplace(net.io(), std::chrono::seconds(3));
+        relayRetry->async_wait([this](std::error_code ec) {
+            if (!ec) relayConnect();
+        });
+    }
+
+    void relayShutdown() {
+        relayEnabled = false;
+        ++relayGen;
+        if (relaySock) { std::error_code ec; relaySock->close(ec); relaySock.reset(); }
+        if (relayPing) relayPing->cancel();
+        if (relayRetry) relayRetry->cancel();
+        relayStateA = RelayState::Off;
     }
 
     void sendTo(std::uint32_t conn, MsgType type, std::vector<std::uint8_t> payload, bool closeAfter = false) {
@@ -280,6 +420,7 @@ void SessionHost::stop() {
     m->net.post([this, &done] {
         std::error_code ec;
         if (m->acceptor) m->acceptor->close(ec);
+        m->relayShutdown();
         auto all = m->conns;
         for (auto& [_, c] : all) c->close("host stopped");
         m->conns.clear();
@@ -287,6 +428,28 @@ void SessionHost::stop() {
     });
     fut.wait_for(std::chrono::seconds(2));
     m->net.stop();
+}
+
+void SessionHost::startRelay(const std::string& relayHost, std::uint16_t relayPort) {
+    if (!m->running) return;
+    m->relayStateA = RelayState::Connecting;
+    m->net.post([this, relayHost, relayPort] {
+        m->relayHost = relayHost;
+        m->relayPort = relayPort;
+        m->relayEnabled = true;
+        m->relayConnect();
+    });
+}
+RelayState SessionHost::relayState() const noexcept { return m->relayStateA.load(); }
+std::uint32_t SessionHost::relayRoomId() const noexcept { return m->relayRoomA.load(); }
+std::string SessionHost::relayError() const {
+    std::lock_guard lk(m->relayErrMutex);
+    return m->relayErr;
+}
+void SessionHost::simulateRelayDrop() {
+    m->net.post([this] {
+        if (m->relaySock) { std::error_code ec; m->relaySock->shutdown(tcp::socket::shutdown_both, ec); }
+    });
 }
 
 bool SessionHost::running() const noexcept { return m->running; }

@@ -3,6 +3,10 @@
 //   nexlevel_bot join <ROOM-CODE> [seconds]   join a room, build a scripted test, print what others do
 //   nexlevel_bot host [seconds]               open a room (port 47777), print its code and what players do
 //                                             (also opens the router port via UPnP, like the mod)
+//   nexlevel_bot relay [port]                 run a relay server on this PC (default port 47800)
+//
+// Set NEXLEVEL_RELAY=host:port to use a relay: "host" then also opens the room on the relay
+// and prints its 10-character code, and "join" can join 10-character codes.
 //
 // Speaks exactly the same protocol as the mod (core library), as GD 2.208x.
 #include <nexlevel/core/session/client.hpp>
@@ -10,10 +14,13 @@
 #include <nexlevel/core/session/room_code.hpp>
 #include <nexlevel/core/net/local_address.hpp>
 #include <nexlevel/core/net/upnp.hpp>
+#include <nexlevel/core/relay/protocol.hpp>
+#include <nexlevel/core/relay/relay_server.hpp>
 
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -27,6 +34,16 @@ namespace {
 
 constexpr std::uint16_t kPort = 47777;
 constexpr GameTarget kTarget = GameTarget::GD2208;
+
+// NEXLEVEL_RELAY=host[:port]
+std::optional<std::pair<std::string, std::uint16_t>> relayFromEnv() {
+    const char* v = std::getenv("NEXLEVEL_RELAY");
+    if (!v || !*v) return std::nullopt;
+    std::string s = v;
+    auto colon = s.rfind(':');
+    if (colon == std::string::npos) return std::pair{s, relay::kDefaultPort};
+    return std::pair{s.substr(0, colon), static_cast<std::uint16_t>(std::atoi(s.substr(colon + 1).c_str()))};
+}
 
 std::string describeObject(const Replica& view, NetId id) {
     const auto* o = view.find(id);
@@ -50,8 +67,13 @@ int runJoin(const std::string& code, int seconds) {
         return 1;
     }
     SessionClient client(kTarget, "NexBot");
-    client.connect(addr->ipString(), addr->port, addr->key);
-    std::printf("[bot] room %s -> connecting to %s:%u ...\n", code.c_str(), addr->ipString().c_str(), addr->port);
+    if (auto r = relayFromEnv()) client.setRelayServer(r->first, r->second);
+    if (!client.connectCode(code)) {
+        std::printf("[bot] cannot join %s: %s (set NEXLEVEL_RELAY=host:port for 10-character codes)\n", code.c_str(), client.lastError().c_str());
+        return 1;
+    }
+    if (addr->relayRoom) std::printf("[bot] room %s -> connecting through the relay ...\n", code.c_str());
+    else std::printf("[bot] room %s -> connecting to %s:%u ...\n", code.c_str(), addr->ipString().c_str(), addr->port);
 
     std::vector<NetId> mine;
     std::size_t lastRoster = 0;
@@ -153,6 +175,22 @@ int runHost(int seconds) {
     } else {
         std::printf("[bot] UPnP: %s (%s) - only the same-network code works\n", toString(mapper.state()), mapper.lastError().c_str());
     }
+    if (auto r = relayFromEnv()) {
+        host.startRelay(r->first, r->second);
+        auto until = Clock::now() + std::chrono::seconds(10);
+        while (host.relayState() != RelayState::Ready && Clock::now() < until) {
+            host.pump();
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        if (host.relayState() == RelayState::Ready) {
+            RoomAddress ra;
+            ra.relayRoom = host.relayRoomId();
+            ra.key = host.roomKey();
+            std::printf("[bot] RELAY code (works from any network): %s\n", encodeRoomCode(ra).c_str());
+        } else {
+            std::printf("[bot] relay %s:%u not reachable: %s\n", r->first.c_str(), r->second, host.relayError().c_str());
+        }
+    }
     std::size_t lastRoster = 1;
     auto start = Clock::now();
     while (Clock::now() - start < std::chrono::seconds(seconds)) {
@@ -172,12 +210,30 @@ int runHost(int seconds) {
     return 0;
 }
 
+int runRelay(std::uint16_t port) {
+    relay::RelayServer server;
+    std::string err;
+    auto bound = server.start(port, false, &err);
+    if (!bound) {
+        std::printf("[relay] cannot open port %u: %s\n", port, err.c_str());
+        return 1;
+    }
+    std::printf("[relay] running on port %u - set NEXLEVEL_RELAY=127.0.0.1:%u (or this PC's address) and use 'host'/'join'\n", *bound, *bound);
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::seconds(10));
+        auto st = server.stats();
+        std::printf("[relay] %zu room(s), %zu player(s) connected, %llu bytes relayed\n", st.rooms, st.pipes,
+            static_cast<unsigned long long>(st.bytesRelayed));
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     if (argc >= 3 && std::string(argv[1]) == "join") return runJoin(argv[2], argc >= 4 ? std::atoi(argv[3]) : 300);
     if (argc >= 2 && std::string(argv[1]) == "host") return runHost(argc >= 3 ? std::atoi(argv[2]) : 300);
-    std::printf("usage:\n  nexlevel_bot join <ROOM-CODE> [seconds]\n  nexlevel_bot host [seconds]\n");
+    if (argc >= 2 && std::string(argv[1]) == "relay") return runRelay(static_cast<std::uint16_t>(argc >= 3 ? std::atoi(argv[2]) : relay::kDefaultPort));
+    std::printf("usage:\n  nexlevel_bot join <ROOM-CODE> [seconds]\n  nexlevel_bot host [seconds]\n  nexlevel_bot relay [port]\n");
     return 1;
 }

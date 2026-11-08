@@ -37,8 +37,8 @@ struct Bits {
     }
 };
 
-std::uint64_t checksum5Bits(const std::vector<bool>& bits) {
-    std::uint64_t h = 1469598103934665603ull ^ 0x15;  // different domain from the 13-char format
+std::uint64_t checksum5Bits(const std::vector<bool>& bits, std::uint64_t domain = 0x15) {
+    std::uint64_t h = 1469598103934665603ull ^ domain;  // each format has its own domain
     std::uint8_t byte = 0;
     int n = 0;
     for (bool b : bits) {
@@ -84,6 +84,38 @@ std::optional<RoomAddress> decodeLong(const std::vector<int>& symbols) {
     if (a.port == 0 || a.lanOctet == 0) return std::nullopt;
     return a;
 }
+constexpr int kRelayDataBits = 32 + 11;  // 43
+constexpr int kRelaySymbols = 10;        // 50 bits; top 2 always 0
+constexpr std::uint64_t kRelayDomain = 0x2A;
+
+std::string encodeRelay(const RoomAddress& a) {
+    Bits b;
+    b.put(a.relayRoom, 32);
+    b.put(a.key & kRoomKeyMask, 11);
+    const auto sum = checksum5Bits(b.v, kRelayDomain);
+    Bits all;
+    all.put(0, kRelaySymbols * 5 - kRelayDataBits - 5);
+    all.v.insert(all.v.end(), b.v.begin(), b.v.end());
+    all.put(sum, 5);
+    std::string sym;
+    std::size_t pos = 0;
+    for (int i = 0; i < kRelaySymbols; ++i) sym += kAlphabet[all.get(pos, 5)];
+    return sym.substr(0, 5) + "-" + sym.substr(5, 5);
+}
+
+std::optional<RoomAddress> decodeRelay(const std::vector<int>& symbols) {
+    Bits all;
+    for (int s : symbols) all.put(static_cast<std::uint64_t>(s), 5);
+    std::size_t pos = 0;
+    if (all.get(pos, kRelaySymbols * 5 - kRelayDataBits - 5) != 0) return std::nullopt;
+    std::vector<bool> data(all.v.begin() + static_cast<std::ptrdiff_t>(pos), all.v.begin() + static_cast<std::ptrdiff_t>(pos + kRelayDataBits));
+    RoomAddress a;
+    a.relayRoom = static_cast<std::uint32_t>(all.get(pos, 32));
+    a.key = static_cast<std::uint16_t>(all.get(pos, 11));
+    if (all.get(pos, 5) != checksum5Bits(data, kRelayDomain)) return std::nullopt;
+    if (a.relayRoom == 0) return std::nullopt;
+    return a;
+}
 } // namespace
 
 std::string RoomAddress::ipString() const {
@@ -91,6 +123,7 @@ std::string RoomAddress::ipString() const {
 }
 
 std::string encodeRoomCode(const RoomAddress& a) {
+    if (a.relayRoom != 0) return encodeRelay(a);
     if (a.lanOctet != 0) return encodeLong(a);
     std::uint64_t data = (static_cast<std::uint64_t>(a.ipv4[0]) << 51) | (static_cast<std::uint64_t>(a.ipv4[1]) << 43) |
                          (static_cast<std::uint64_t>(a.ipv4[2]) << 35) | (static_cast<std::uint64_t>(a.ipv4[3]) << 27) |
@@ -114,6 +147,7 @@ std::optional<RoomAddress> decodeRoomCode(std::string_view code) {
         if (symbols.size() > static_cast<std::size_t>(kLongSymbols)) return std::nullopt;
     }
     if (symbols.size() == static_cast<std::size_t>(kLongSymbols)) return decodeLong(symbols);
+    if (symbols.size() == static_cast<std::size_t>(kRelaySymbols)) return decodeRelay(symbols);
     if (symbols.size() != 13) return std::nullopt;
     if (symbols[0] > 15) return std::nullopt;  // first symbol carries only 4 of 64 bits
     std::uint64_t v = 0;
