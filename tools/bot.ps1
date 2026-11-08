@@ -3,7 +3,7 @@
 #   tools\bot.ps1 join <ROOM-CODE>      join a specific room
 #   tools\bot.ps1 host                  open a room and print its code for GD to join
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$BotArgs)
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'  # native stderr must not abort; exit codes are checked
 $root = Split-Path -Parent $PSScriptRoot
 $bld = Join-Path $root 'build/core-tests-win'
 cmake -S (Join-Path $root 'core') -B $bld | Out-Null
