@@ -11,9 +11,18 @@ echo "== installing build tools"
 sudo apt-get update -y
 sudo apt-get install -y g++ cmake ninja-build ca-certificates curl
 
-echo "== building nexlevel_relay"
+# Small servers (1 GB RAM, e.g. AWS t3.micro) can run out of memory while compiling: add swap.
+MEM_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+if [[ "$MEM_KB" -lt 2000000 ]] && ! swapon --show | grep -q .; then
+    echo "== adding 2 GB swap (small server)"
+    sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+    sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+    grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+fi
+
+echo "== building nexlevel_relay (a few minutes)"
 cmake -S core -B build/relay -G Ninja -DCMAKE_BUILD_TYPE=Release -DNEXLEVEL_BUILD_TESTS=OFF -DNEXLEVEL_BUILD_TOOLS=ON
-cmake --build build/relay --target nexlevel_relay
+cmake --build build/relay --target nexlevel_relay -j 1
 
 echo "== installing the service"
 sudo install -m 755 build/relay/nexlevel_relay /usr/local/bin/nexlevel_relay
