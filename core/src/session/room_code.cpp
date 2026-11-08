@@ -1,5 +1,7 @@
 #include <nexlevel/core/session/room_code.hpp>
 
+#include <vector>
+
 namespace nexlevel::session {
 
 namespace {
@@ -24,6 +26,64 @@ std::uint64_t checksum5(std::uint64_t data) {
     }
     return (h ^ (h >> 5) ^ (h >> 10) ^ (h >> 20) ^ (h >> 40)) & 0x1F;
 }
+// Bit strings for the 15-character format (72 bits do not fit a uint64).
+struct Bits {
+    std::vector<bool> v;
+    void put(std::uint64_t value, int n) { for (int i = n - 1; i >= 0; --i) v.push_back((value >> i) & 1); }
+    std::uint64_t get(std::size_t& pos, int n) const {
+        std::uint64_t r = 0;
+        for (int i = 0; i < n; ++i) r = (r << 1) | (v[pos++] ? 1u : 0u);
+        return r;
+    }
+};
+
+std::uint64_t checksum5Bits(const std::vector<bool>& bits) {
+    std::uint64_t h = 1469598103934665603ull ^ 0x15;  // different domain from the 13-char format
+    std::uint8_t byte = 0;
+    int n = 0;
+    for (bool b : bits) {
+        byte = static_cast<std::uint8_t>((byte << 1) | (b ? 1 : 0));
+        if (++n == 8) { h ^= byte; h *= 1099511628211ull; byte = 0; n = 0; }
+    }
+    if (n) { h ^= byte; h *= 1099511628211ull; }
+    return (h ^ (h >> 5) ^ (h >> 10) ^ (h >> 20) ^ (h >> 40)) & 0x1F;
+}
+
+constexpr int kLongDataBits = 32 + 16 + 11 + 8;   // 67
+constexpr int kLongSymbols = 15;                  // 75 bits; top 3 always 0
+
+std::string encodeLong(const RoomAddress& a) {
+    Bits b;
+    for (auto o : a.ipv4) b.put(o, 8);
+    b.put(a.port, 16);
+    b.put(a.key & kRoomKeyMask, 11);
+    b.put(a.lanOctet, 8);
+    const auto sum = checksum5Bits(b.v);
+    Bits all;
+    all.put(0, kLongSymbols * 5 - kLongDataBits - 5);
+    all.v.insert(all.v.end(), b.v.begin(), b.v.end());
+    all.put(sum, 5);
+    std::string sym;
+    std::size_t pos = 0;
+    for (int i = 0; i < kLongSymbols; ++i) sym += kAlphabet[all.get(pos, 5)];
+    return sym.substr(0, 5) + "-" + sym.substr(5, 5) + "-" + sym.substr(10, 5);
+}
+
+std::optional<RoomAddress> decodeLong(const std::vector<int>& symbols) {
+    Bits all;
+    for (int s : symbols) all.put(static_cast<std::uint64_t>(s), 5);
+    std::size_t pos = 0;
+    if (all.get(pos, kLongSymbols * 5 - kLongDataBits - 5) != 0) return std::nullopt;
+    std::vector<bool> data(all.v.begin() + static_cast<std::ptrdiff_t>(pos), all.v.begin() + static_cast<std::ptrdiff_t>(pos + kLongDataBits));
+    RoomAddress a;
+    for (auto& o : a.ipv4) o = static_cast<std::uint8_t>(all.get(pos, 8));
+    a.port = static_cast<std::uint16_t>(all.get(pos, 16));
+    a.key = static_cast<std::uint16_t>(all.get(pos, 11));
+    a.lanOctet = static_cast<std::uint8_t>(all.get(pos, 8));
+    if (all.get(pos, 5) != checksum5Bits(data)) return std::nullopt;
+    if (a.port == 0 || a.lanOctet == 0) return std::nullopt;
+    return a;
+}
 } // namespace
 
 std::string RoomAddress::ipString() const {
@@ -31,6 +91,7 @@ std::string RoomAddress::ipString() const {
 }
 
 std::string encodeRoomCode(const RoomAddress& a) {
+    if (a.lanOctet != 0) return encodeLong(a);
     std::uint64_t data = (static_cast<std::uint64_t>(a.ipv4[0]) << 51) | (static_cast<std::uint64_t>(a.ipv4[1]) << 43) |
                          (static_cast<std::uint64_t>(a.ipv4[2]) << 35) | (static_cast<std::uint64_t>(a.ipv4[3]) << 27) |
                          (static_cast<std::uint64_t>(a.port) << 11) | (a.key & kRoomKeyMask);
@@ -44,17 +105,19 @@ std::string encodeRoomCode(const RoomAddress& a) {
 }
 
 std::optional<RoomAddress> decodeRoomCode(std::string_view code) {
-    std::uint64_t v = 0;
-    int count = 0;
+    std::vector<int> symbols;
     for (char c : code) {
         if (c == '-' || c == ' ') continue;
         int s = symbolValue(c);
         if (s < 0) return std::nullopt;
-        if (count == 0 && s > 15) return std::nullopt;  // first symbol carries only 4 of 64 bits
-        v = (v << 5) | static_cast<std::uint64_t>(s);
-        if (++count > 13) return std::nullopt;
+        symbols.push_back(s);
+        if (symbols.size() > static_cast<std::size_t>(kLongSymbols)) return std::nullopt;
     }
-    if (count != 13) return std::nullopt;
+    if (symbols.size() == static_cast<std::size_t>(kLongSymbols)) return decodeLong(symbols);
+    if (symbols.size() != 13) return std::nullopt;
+    if (symbols[0] > 15) return std::nullopt;  // first symbol carries only 4 of 64 bits
+    std::uint64_t v = 0;
+    for (int s : symbols) v = (v << 5) | static_cast<std::uint64_t>(s);
     std::uint64_t data = v >> 5;
     if ((v & 0x1F) != checksum5(data)) return std::nullopt;
     RoomAddress a;

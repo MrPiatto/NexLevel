@@ -4,6 +4,7 @@
 #include <nexlevel/core/session/room_code.hpp>
 
 #include <algorithm>
+#include <thread>
 
 using namespace geode::prelude;
 
@@ -61,6 +62,8 @@ bool SessionManager::hostRoom(std::string* error) {
         return false;
     }
     m_host = std::move(host);
+    m_mapper = std::make_unique<net::PortMapper>();
+    m_mapper->start(m_host->port());
     m_roomLevel = m_editor->level();
     if (m_roomLevel) m_roomLevel->retain();
     ensureScheduled();
@@ -85,6 +88,7 @@ void SessionManager::leave() {
     if (m_host) {
         m_host->stop();
         m_host.reset();
+        releaseMapper();
         if (m_roomLevel) { m_roomLevel->release(); m_roomLevel = nullptr; }
         notify("Room closed", NotificationIcon::Info);
     } else if (m_client) {
@@ -108,12 +112,43 @@ std::optional<sync::PeerId> SessionManager::selfId() const {
     return std::nullopt;
 }
 
+void SessionManager::releaseMapper() {
+    if (!m_mapper) return;
+    // Removing the router mapping can take a moment; never block the game for it.
+    std::thread([mapper = std::move(m_mapper)]() mutable { mapper->stop(); }).detach();
+}
+
 std::optional<std::string> SessionManager::roomCode() const {
     if (!m_host) return std::nullopt;
-    // The code carries this PC's network address; players never see or type it.
-    auto ip = session::parseIPv4(net::primaryLocalIPv4().value_or("127.0.0.1"))
-                  .value_or(std::array<std::uint8_t, 4>{127, 0, 0, 1});
-    return session::encodeRoomCode(session::RoomAddress{ip, m_host->port(), m_host->roomKey()});
+    // The code carries this PC's address; players never see or type it.
+    auto lan = session::parseIPv4(net::primaryLocalIPv4().value_or("127.0.0.1"))
+                   .value_or(std::array<std::uint8_t, 4>{127, 0, 0, 1});
+    session::RoomAddress addr{lan, m_host->port(), m_host->roomKey()};
+    if (m_mapper) {
+        const auto st = m_mapper->state();
+        if (st == net::MapState::Working) return std::nullopt;
+        if (st == net::MapState::Mapped) {
+            if (auto pub = m_mapper->externalIPv4()) {
+                addr.ipv4 = *pub;
+                addr.port = m_mapper->externalPort();
+                addr.lanOctet = lan[3] == 0 ? 1 : lan[3];
+            }
+        }
+    }
+    return session::encodeRoomCode(addr);
+}
+
+std::string SessionManager::onlineText() const {
+    if (!m_host || !m_mapper) return {};
+    switch (m_mapper->state()) {
+        case net::MapState::Working: return "Opening your router for online play...";
+        case net::MapState::Mapped: return "Online: friends anywhere can join";
+        case net::MapState::NoGateway: return "Same Wi-Fi only: router has UPnP turned off";
+        case net::MapState::DoubleNat: return "Same Wi-Fi only: your provider blocks hosting";
+        case net::MapState::Failed: return "Same Wi-Fi only: router refused to open a port";
+        case net::MapState::Idle: break;
+    }
+    return {};
 }
 
 std::string SessionManager::statusText() const {

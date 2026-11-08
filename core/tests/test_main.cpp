@@ -11,6 +11,7 @@
 
 void runSyncTests();
 void runSessionTests();
+void runUpnpTests();
 
 using namespace nexlevel;
 
@@ -158,6 +159,7 @@ int main() {
     testLoopbackProbe();
     runSyncTests();
     runSessionTests();
+    runUpnpTests();
     std::printf("%d checks, %d failed\n", nltest::checks, nltest::failed);
     return nltest::failed == 0 ? 0 : 1;
 }

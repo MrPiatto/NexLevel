@@ -35,6 +35,7 @@ add_library(nexlevel_core STATIC
     src/frame.cpp
     src/net/loopback_probe.cpp
     src/net/local_address.cpp
+    src/net/upnp.cpp
     src/sync/object_props.cpp
     src/sync/op.cpp
     src/sync/replica.cpp
@@ -61,7 +62,7 @@ set_target_properties(nexlevel_core PROPERTIES
 option(NEXLEVEL_BUILD_TESTS "Build nexlevel_core unit tests" ${PROJECT_IS_TOP_LEVEL})
 if(NEXLEVEL_BUILD_TESTS)
     enable_testing()
-    add_executable(nexlevel_core_tests tests/test_main.cpp tests/test_sync.cpp tests/test_session.cpp)
+    add_executable(nexlevel_core_tests tests/test_main.cpp tests/test_sync.cpp tests/test_session.cpp tests/test_upnp.cpp)
     target_link_libraries(nexlevel_core_tests PRIVATE nexlevel_core)
     add_test(NAME nexlevel_core_tests COMMAND nexlevel_core_tests)
 endif()

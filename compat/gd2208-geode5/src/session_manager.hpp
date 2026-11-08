@@ -7,6 +7,7 @@
 
 #include <nexlevel/core/session/client.hpp>
 #include <nexlevel/core/session/host.hpp>
+#include <nexlevel/core/net/upnp.hpp>
 
 #include <memory>
 #include <optional>
@@ -43,7 +44,10 @@ public:
 
     std::vector<session::PeerInfo> peers() const;
     std::optional<sync::PeerId> selfId() const;
-    std::optional<std::string> roomCode() const;     // host only: what players type to join
+    // Host only: what players type to join. nullopt while the router port is still being opened
+    // (a few seconds), so nobody copies a code that only works on the local network.
+    std::optional<std::string> roomCode() const;
+    std::string onlineText() const;  // host only: who can join (internet / same network only)
     std::string statusText() const;
     std::string displayName() const;
 
@@ -58,10 +62,12 @@ public:
 private:
     void ensureScheduled();
     void tick(float dt);
+    void releaseMapper();
     void endClient(const std::string& message, geode::NotificationIcon icon);
 
     std::unique_ptr<session::SessionHost> m_host;
     std::unique_ptr<session::SessionClient> m_client;
+    std::unique_ptr<net::PortMapper> m_mapper;  // host: opens the router port automatically (UPnP)
     session::ClientState m_lastClientState = session::ClientState::Idle;
     IEditorBridge* m_editor = nullptr;
     GJGameLevel* m_roomLevel = nullptr;  // retained while the room is open

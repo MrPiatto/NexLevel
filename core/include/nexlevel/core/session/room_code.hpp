@@ -4,6 +4,10 @@
 // into 64 bits written as 13 Crockford base32 characters: "K7Q2-M9XA-3PF1Q".
 // Decoding ignores case, dashes and spaces, and accepts O->0, I/L->1 (Crockford aliases).
 // The room key is checked by the host at join, so knowing the address alone is not enough.
+//
+// Online rooms (router port opened automatically) use a 15-character code that also carries the
+// last byte of the host's LAN address ("lanOctet"): players on the host's own network then connect
+// over the LAN, which works even when the router cannot loop its public address back inside.
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -18,6 +22,7 @@ struct RoomAddress {
     std::array<std::uint8_t, 4> ipv4{};
     std::uint16_t port = 0;
     std::uint16_t key = 0;  // 0..2047
+    std::uint8_t lanOctet = 0;  // 0 = none (13-char code); else 15-char code
 
     std::string ipString() const;
     bool operator==(const RoomAddress&) const = default;

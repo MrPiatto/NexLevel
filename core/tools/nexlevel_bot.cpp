@@ -2,12 +2,14 @@
 //
 //   nexlevel_bot join <ROOM-CODE> [seconds]   join a room, build a scripted test, print what others do
 //   nexlevel_bot host [seconds]               open a room (port 47777), print its code and what players do
+//                                             (also opens the router port via UPnP, like the mod)
 //
 // Speaks exactly the same protocol as the mod (core library), as GD 2.208x.
 #include <nexlevel/core/session/client.hpp>
 #include <nexlevel/core/session/host.hpp>
 #include <nexlevel/core/session/room_code.hpp>
 #include <nexlevel/core/net/local_address.hpp>
+#include <nexlevel/core/net/upnp.hpp>
 
 #include <chrono>
 #include <cstdio>
@@ -134,8 +136,23 @@ int runHost(int seconds) {
         return 1;
     }
     auto ip = parseIPv4(net::primaryLocalIPv4().value_or("127.0.0.1")).value_or(std::array<std::uint8_t, 4>{127, 0, 0, 1});
-    std::printf("[bot] room open (GD 2.208x) for %d s - room code: %s\n", seconds,
-        encodeRoomCode(RoomAddress{ip, *port, host.roomKey()}).c_str());
+    RoomAddress addr{ip, *port, host.roomKey()};
+    std::printf("[bot] room open (GD 2.208x) for %d s\n", seconds);
+    std::printf("[bot] same-network code: %s\n", encodeRoomCode(addr).c_str());
+    std::printf("[bot] opening the router port (UPnP)...\n");
+    net::PortMapper mapper;
+    mapper.start(*port);
+    while (mapper.state() == net::MapState::Working) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    if (mapper.state() == net::MapState::Mapped) {
+        RoomAddress online = addr;
+        online.ipv4 = *mapper.externalIPv4();
+        online.port = mapper.externalPort();
+        online.lanOctet = ip[3] == 0 ? 1 : ip[3];
+        std::printf("[bot] UPnP OK: public %s port %u\n", online.ipString().c_str(), online.port);
+        std::printf("[bot] ONLINE code (works anywhere): %s\n", encodeRoomCode(online).c_str());
+    } else {
+        std::printf("[bot] UPnP: %s (%s) - only the same-network code works\n", toString(mapper.state()), mapper.lastError().c_str());
+    }
     std::size_t lastRoster = 1;
     auto start = Clock::now();
     while (Clock::now() - start < std::chrono::seconds(seconds)) {
@@ -151,6 +168,7 @@ int runHost(int seconds) {
     }
     std::printf("[bot] closing the room\n");
     host.stop();
+    mapper.stop();
     return 0;
 }
 

@@ -23,6 +23,8 @@ public:
     SessionClient& operator=(const SessionClient&) = delete;
 
     void connect(const std::string& host, std::uint16_t port, std::uint16_t roomKey);
+    // Several addresses for the same room (e.g. public + LAN): tried in parallel, first wins.
+    void connectTargets(std::vector<std::pair<std::string, std::uint16_t>> targets, std::uint16_t roomKey);
     // Join with a room code. Returns false (and does nothing) if the code is malformed.
     bool connectCode(std::string_view code);
     void disconnect();

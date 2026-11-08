@@ -65,7 +65,8 @@ bool CollabPopup::init() {
 
 std::string CollabPopup::signature() const {
     auto* sm = SessionManager::get();
-    std::string sig = std::to_string(static_cast<int>(sm->role())) + "|" + sm->statusText();
+    std::string sig = std::to_string(static_cast<int>(sm->role())) + "|" + sm->statusText() + "|" +
+                      sm->roomCode().value_or("") + "|" + sm->onlineText();
     for (auto& p : sm->peers()) sig += "|" + std::to_string(p.id) + p.name;
     return sig;
 }
@@ -110,12 +111,18 @@ void CollabPopup::rebuild() {
     }
 
     if (role == Role::Host) {
+        m_mainLayer->addChildAtPosition(track(label("ROOM CODE", "goldFont.fnt", .4f, kGrey)), Anchor::Top, {0.f, -84.f});
         if (auto code = sm->roomCode()) {
-            m_mainLayer->addChildAtPosition(track(label("ROOM CODE", "goldFont.fnt", .4f, kGrey)), Anchor::Top, {0.f, -84.f});
-            m_mainLayer->addChildAtPosition(track(label(*code, "bigFont.fnt", .6f, kPurpleSoft)), Anchor::Top, {-30.f, -104.f});
+            const float scale = code->size() > 15 ? .52f : .6f;  // online codes are 2 characters longer
+            m_mainLayer->addChildAtPosition(track(label(*code, "bigFont.fnt", scale, kPurpleSoft)), Anchor::Top, {-30.f, -104.f});
             m_buttonMenu->addChildAtPosition(track(button("Copy", kPurpleDark, .5f, this, menu_selector(CollabPopup::onCopy))),
                 Anchor::Top, {125.f, -104.f});
+        } else {
+            m_mainLayer->addChildAtPosition(track(label("Preparing...", "bigFont.fnt", .5f, kGrey)), Anchor::Top, {0.f, -104.f});
         }
+        const auto online = sm->onlineText();
+        const bool good = online.rfind("Online", 0) == 0;
+        m_mainLayer->addChildAtPosition(track(label(online, "chatFont.fnt", .5f, good ? kPurpleSoft : kGrey)), Anchor::Top, {0.f, -121.f});
     }
 
     // Players in the room.

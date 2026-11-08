@@ -3,6 +3,7 @@
 #include "../net/connection.hpp"
 
 #include <nexlevel/core/session/room_code.hpp>
+#include <nexlevel/core/net/local_address.hpp>
 
 #include <chrono>
 #include <future>
@@ -16,6 +17,7 @@ using Clock = std::chrono::steady_clock;
 namespace {
 constexpr auto kRetryInterval = std::chrono::seconds(1);
 constexpr int kMaxReconnectAttempts = 30;
+constexpr auto kConnectTimeout = std::chrono::seconds(6);
 }
 
 struct SessionClient::Impl {
@@ -43,8 +45,8 @@ struct SessionClient::Impl {
     std::optional<sync::ClientReplica> replica;
     std::optional<sync::NetIdAllocator> ids;
     std::vector<PeerInfo> peers;
-    std::string host;
-    std::uint16_t port = 0;
+    // Addresses to try for this room, raced in parallel; the first to connect wins.
+    std::vector<std::pair<std::string, std::uint16_t>> targets;
     std::uint16_t roomKey = 0;
     std::uint64_t resumeToken = 0;
     std::uint32_t generation = 0;  // ignores events from connections that were replaced
@@ -76,25 +78,68 @@ struct SessionClient::Impl {
         attemptInFlight = true;
         helloSent = false;
         const auto gen = ++generation;
-        net.post([this, gen, h = host, p = port] {
+        net.post([this, gen, targets = targets] {
             if (conn) {
                 conn->close("replaced");
                 conn.reset();
             }
-            auto resolver = std::make_shared<tcp::resolver>(net.io());
-            resolver->async_resolve(h, std::to_string(p), [this, gen, resolver](std::error_code ec, tcp::resolver::results_type results) {
-                if (ec) { events.push({Event::ConnectFailed, gen, {}, "resolve: " + ec.message()}); return; }
-                auto socket = std::make_shared<tcp::socket>(net.io());
-                asio::async_connect(*socket, results, [this, gen, socket](std::error_code ec2, const tcp::endpoint&) {
-                    if (ec2) { events.push({Event::ConnectFailed, gen, {}, "connect: " + ec2.message()}); return; }
-                    conn = std::make_shared<net::Connection>(
-                        std::move(*socket), gen,
-                        [this](std::uint32_t g, Frame f) { events.push({Event::FrameIn, g, std::move(f), {}}); },
-                        [this](std::uint32_t g, std::string r) { events.push({Event::Closed, g, {}, std::move(r)}); });
-                    conn->start();
-                    events.push({Event::Connected, gen, {}, {}});
-                });
+            // Happy-eyeballs style race over all candidate addresses, with an overall timeout
+            // (a connect to an unreachable public address can otherwise hang for ~20 s).
+            struct Race {
+                bool done = false;
+                std::size_t pending = 0;
+                std::string lastError;
+                std::vector<std::shared_ptr<tcp::socket>> sockets;
+                std::shared_ptr<asio::steady_timer> timer;
+            };
+            auto race = std::make_shared<Race>();
+            race->pending = targets.size();
+            race->timer = std::make_shared<asio::steady_timer>(net.io(), kConnectTimeout);
+            auto finishFail = [this, gen, race] {
+                if (race->done) return;
+                race->done = true;
+                race->timer->cancel();
+                for (auto& s : race->sockets) { std::error_code ec; s->close(ec); }
+                events.push({Event::ConnectFailed, gen, {}, race->lastError.empty() ? "connect failed" : race->lastError});
+            };
+            race->timer->async_wait([race, finishFail](std::error_code ec) {
+                if (ec) return;  // cancelled
+                race->lastError = "connect: timed out";
+                finishFail();
             });
+            if (targets.empty()) { race->lastError = "no address"; finishFail(); return; }
+            for (const auto& [h, p] : targets) {
+                auto resolver = std::make_shared<tcp::resolver>(net.io());
+                resolver->async_resolve(h, std::to_string(p), [this, gen, race, resolver, finishFail](std::error_code ec, tcp::resolver::results_type results) {
+                    if (race->done) return;
+                    if (ec) {
+                        race->lastError = "resolve: " + ec.message();
+                        if (--race->pending == 0) finishFail();
+                        return;
+                    }
+                    auto socket = std::make_shared<tcp::socket>(net.io());
+                    race->sockets.push_back(socket);
+                    asio::async_connect(*socket, results, [this, gen, race, socket, finishFail](std::error_code ec2, const tcp::endpoint&) {
+                        if (race->done) return;
+                        if (ec2) {
+                            race->lastError = "connect: " + ec2.message();
+                            if (--race->pending == 0) finishFail();
+                            return;
+                        }
+                        race->done = true;
+                        race->timer->cancel();
+                        for (auto& other : race->sockets) {
+                            if (other != socket) { std::error_code cec; other->close(cec); }
+                        }
+                        conn = std::make_shared<net::Connection>(
+                            std::move(*socket), gen,
+                            [this](std::uint32_t g, Frame f) { events.push({Event::FrameIn, g, std::move(f), {}}); },
+                            [this](std::uint32_t g, std::string r) { events.push({Event::Closed, g, {}, std::move(r)}); });
+                        conn->start();
+                        events.push({Event::Connected, gen, {}, {}});
+                    });
+                });
+            }
         });
     }
 
@@ -170,13 +215,29 @@ SessionClient::~SessionClient() {
 bool SessionClient::connectCode(std::string_view code) {
     auto addr = decodeRoomCode(code);
     if (!addr) return false;
-    connect(addr->ipString(), addr->port, addr->key);
+    std::vector<std::pair<std::string, std::uint16_t>> targets{{addr->ipString(), addr->port}};
+    if (addr->lanOctet != 0) {
+        // Online code: also try the host's LAN address in case we are on the same network
+        // (assumes the usual /24 home network).
+        if (auto mine = net::primaryLocalIPv4()) {
+            if (auto ip = parseIPv4(*mine)) {
+                std::array<std::uint8_t, 4> lan{(*ip)[0], (*ip)[1], (*ip)[2], addr->lanOctet};
+                RoomAddress l;
+                l.ipv4 = lan;
+                if (lan != addr->ipv4) targets.push_back({l.ipString(), addr->port});
+            }
+        }
+    }
+    connectTargets(std::move(targets), addr->key);
     return true;
 }
 
 void SessionClient::connect(const std::string& host, std::uint16_t port, std::uint16_t roomKey) {
-    m->host = host;
-    m->port = port;
+    connectTargets({{host, port}}, roomKey);
+}
+
+void SessionClient::connectTargets(std::vector<std::pair<std::string, std::uint16_t>> targets, std::uint16_t roomKey) {
+    m->targets = std::move(targets);
     m->roomKey = roomKey;
     m->state = ClientState::Connecting;
     m->error.clear();
