@@ -57,6 +57,7 @@ add_library(nexlevel_core STATIC
     src/sync/replica.cpp
     src/sync/host_sequencer.cpp
     src/sync/client_replica.cpp
+    src/sync/level_settings.cpp
     src/session/messages.cpp
     src/session/room_code.cpp
     src/session/host.cpp
@@ -81,7 +82,7 @@ set_target_properties(nexlevel_core PROPERTIES
 option(NEXLEVEL_BUILD_TESTS "Build nexlevel_core unit tests" ${PROJECT_IS_TOP_LEVEL})
 if(NEXLEVEL_BUILD_TESTS)
     enable_testing()
-    add_executable(nexlevel_core_tests tests/test_main.cpp tests/test_sync.cpp tests/test_session.cpp tests/test_upnp.cpp tests/test_crypto.cpp tests/test_relay.cpp)
+    add_executable(nexlevel_core_tests tests/test_main.cpp tests/test_sync.cpp tests/test_session.cpp tests/test_upnp.cpp tests/test_crypto.cpp tests/test_relay.cpp tests/test_level_settings.cpp)
     target_link_libraries(nexlevel_core_tests PRIVATE nexlevel_core)
     add_test(NAME nexlevel_core_tests COMMAND nexlevel_core_tests)
 endif()

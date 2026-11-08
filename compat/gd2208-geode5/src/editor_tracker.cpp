@@ -12,6 +12,7 @@
 
 #include <nexlevel/core/sync/object_props.hpp>
 
+#include "level_settings_adapter.hpp"
 #include "session_manager.hpp"
 
 #include <memory>
@@ -102,6 +103,64 @@ public:
     void resyncSilently() {
         for (auto& [o, props] : m_cache) props = read(o);
         m_dirty.clear();
+        m_settingsCache = nexlevel::mod::readLevelSettings(m_layer);
+    }
+
+    // Level settings have no hookable "changed" event for every screen that edits them
+    // (settings layer, colour list, song picker), so they are compared a few times per second.
+    void checkLevelSettings() {
+        if (++m_settingsTick < 20) return;
+        m_settingsTick = 0;
+        if (m_settingsDeferred && !settingsScreenOpen()) {
+            // Publish what the player changed on the screen first, then take the room's values.
+            auto mine = nexlevel::mod::readLevelSettings(m_layer);
+            auto* sm = SessionManager::get();
+            auto d = nls::diffProps(m_settingsCache, mine);
+            if (!d.empty() && sm->inSession() && sm->view() && sm->view()->find(nls::kLevelSettingsId)) {
+                sm->submitLocal(nls::Op::setProps(nls::kLevelSettingsId, d));
+            }
+            if (auto* view = sm->view()) {
+                RemoteScope scope(*this);
+                applySettingsFromView(*view);
+            }
+            return;
+        }
+        auto now = nexlevel::mod::readLevelSettings(m_layer);
+        if (now.empty()) return;
+        if (!m_settingsKnown) {
+            m_settingsCache = std::move(now);
+            m_settingsKnown = true;
+            return;
+        }
+        if (now == m_settingsCache) return;
+        auto d = nls::diffProps(m_settingsCache, now);
+        m_settingsCache = std::move(now);
+        auto* sm = SessionManager::get();
+        if (!sm->inSession() || d.empty()) return;
+        log::info("NexLevel: level settings changed: {}", nls::describe(d));
+        auto* view = sm->view();
+        if (view && view->find(nls::kLevelSettingsId)) sm->submitLocal(nls::Op::setProps(nls::kLevelSettingsId, d));
+        else if (sm->role() == nexlevel::mod::Role::Host) sm->submitLocal(nls::Op::create(nls::kLevelSettingsId, m_settingsCache));
+    }
+
+    // While the local player has the level settings screen open, its stale values would be written
+    // back on close; apply remote settings once it is closed.
+    static bool settingsScreenOpen() {
+        auto* scene = CCDirector::sharedDirector()->getRunningScene();
+        return scene && scene->getChildByType<LevelSettingsLayer>(0) != nullptr;
+    }
+
+    void applySettingsFromView(const nls::Replica& view) {
+        if (settingsScreenOpen()) {
+            m_settingsDeferred = true;
+            return;
+        }
+        m_settingsDeferred = false;
+        if (const auto* st = view.find(nls::kLevelSettingsId)) {
+            nexlevel::mod::applyLevelSettings(m_layer, st->props);
+        }
+        m_settingsCache = nexlevel::mod::readLevelSettings(m_layer);
+        m_settingsKnown = true;
     }
 
     void tick(CCArray* selected, GameObject* single) {
@@ -138,6 +197,7 @@ public:
                 it->second = std::move(now);
             }
             flushSummary("changed", changedTotal);
+            checkLevelSettings();
         }
         flushSummary("created", m_createdLogged);
         flushSummary("removed", m_removedLogged);
@@ -170,6 +230,9 @@ public:
             ++n;
         });
         log::info("NexLevel: published {} existing objects to the room", n);
+        m_settingsCache = nexlevel::mod::readLevelSettings(m_layer);
+        m_settingsKnown = true;
+        if (!m_settingsCache.empty()) sm->submitLocal(nls::Op::create(nls::kLevelSettingsId, m_settingsCache));
     }
 
     void rebuildFromSession() override {
@@ -188,7 +251,10 @@ public:
         m_dirty.clear();
         m_pendingRemoval.clear();
         m_deferred.clear();
-        for (const auto& [id, state] : view->objects()) spawn(id, state.props);
+        for (const auto& [id, state] : view->objects()) {
+            if (!nls::isLevelSettings(id)) spawn(id, state.props);
+        }
+        applySettingsFromView(*view);
         log::info("NexLevel: editor rebuilt from room ({} objects)", view->objects().size());
     }
 
@@ -201,6 +267,10 @@ public:
         RemoteScope scope(*this);
         log::info("NexLevel: applying {} remote change(s)", ids.size());
         for (auto id : ids) {
+            if (nls::isLevelSettings(id)) {  // not a GameObject: level-wide settings
+                if (view->find(id)) applySettingsFromView(*view);
+                continue;
+            }
             const auto* state = view->find(id);
             auto it = m_idToObj.find(id);
             GameObject* obj = it == m_idToObj.end() ? nullptr : it->second;
@@ -333,6 +403,10 @@ private:
     bool m_paused = false;
     bool m_armed = false;
     bool m_applyingRemote = false;
+    nls::PropMap m_settingsCache;
+    int m_settingsTick = 0;
+    bool m_settingsKnown = false;
+    bool m_settingsDeferred = false;
 };
 
 // Owned by the active EditorUI's fields; null outside the editor.
