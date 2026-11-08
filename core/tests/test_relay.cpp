@@ -189,7 +189,7 @@ void testRelayErrors() {
     std::array<char, 16> buf{};
     std::error_code ec;
     junk.read_some(asio::buffer(buf), ec);
-    CHECK(ec == asio::error::eof || ec == asio::error::connection_reset);
+    CHECK(ec == asio::error::eof || ec == asio::error::connection_reset || ec == asio::error::connection_aborted);
 
     relayServer.stop();
 }

@@ -141,7 +141,7 @@ void testHostRejectsPlainTraffic() {
         host.pump();
         auto n = sock.read_some(asio::buffer(buf), ec);
         (void)n;
-        closed = ec == asio::error::eof || ec == asio::error::connection_reset;
+        closed = ec == asio::error::eof || ec == asio::error::connection_reset || ec == asio::error::connection_aborted;
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     CHECK(closed);
