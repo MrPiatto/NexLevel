@@ -196,6 +196,7 @@ public:
             return;
         }
         RemoteScope scope(*this);
+        log::info("NexLevel: applying {} remote change(s)", ids.size());
         for (auto id : ids) {
             const auto* state = view->find(id);
             auto it = m_idToObj.find(id);

@@ -66,6 +66,7 @@ private:
     IEditorBridge* m_editor = nullptr;
     GJGameLevel* m_roomLevel = nullptr;  // retained while the room is open
     bool m_scheduled = false;
+    std::vector<session::PeerInfo> m_lastPeers;
 };
 
 void notify(const std::string& text, geode::NotificationIcon icon = geode::NotificationIcon::Info);

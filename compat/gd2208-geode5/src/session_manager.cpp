@@ -2,6 +2,8 @@
 
 #include <nexlevel/core/net/local_address.hpp>
 
+#include <algorithm>
+
 using namespace geode::prelude;
 
 namespace nexlevel::mod {
@@ -169,6 +171,23 @@ void SessionManager::endClient(const std::string& message, NotificationIcon icon
 }
 
 void SessionManager::tick(float) {
+    // Log and announce players joining/leaving (host and client).
+    auto now = peers();
+    if (now != m_lastPeers) {
+        for (auto& p : now) {
+            if (std::find(m_lastPeers.begin(), m_lastPeers.end(), p) == m_lastPeers.end() && !m_lastPeers.empty()) {
+                log::info("NexLevel: {} joined the room", p.name);
+                notify(p.name + " joined", NotificationIcon::Info);
+            }
+        }
+        for (auto& p : m_lastPeers) {
+            if (std::find(now.begin(), now.end(), p) == now.end() && !now.empty()) {
+                log::info("NexLevel: {} left the room", p.name);
+                notify(p.name + " left", NotificationIcon::Info);
+            }
+        }
+        m_lastPeers = now;
+    }
     if (m_host) {
         auto ids = m_host->pump();
         if (m_editor && !ids.empty()) m_editor->applyRemote(ids);

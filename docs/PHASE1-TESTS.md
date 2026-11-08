@@ -20,6 +20,8 @@
 
 | 2026-11-08 | Core tests on Windows (MSVC), incl. sync engine + TCP session | PASS | 123 checks, 0 failed |
 
+| 2026-11-08 | First real room: GD (host, mod) + NexBot (same PC, 127.0.0.1) | PASS | bot built 5 blocks/deleted 1 while host was out of the editor; host re-entered: `editor rebuilt from room (5 objects)`; host edits published |
+
 ## Findings
 - `GameObject::m_uniqueID` is not a stable identity: after undo/redo the same object was logged as uid 3941 when re-added and uid 3942 when removed again. Confirms the design decision to use NexLevel NetIDs.
 - `EditorUI::deleteObject` and `LevelEditorLayer::undoLastAction/redoLastAction` are inline on Windows (also noted by ZyyeDev/MultiplayerEditor).
