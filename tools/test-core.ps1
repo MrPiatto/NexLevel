@@ -7,7 +7,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $bld = Join-Path $root 'build/core-tests-win'
 $log = Join-Path $bld 'last-run.txt'
 New-Item -ItemType Directory -Force -Path $bld | Out-Null
-"=== test-core $(Get-Date -Format s)" | Set-Content $log
+"=== test-core $(Get-Date -Format s)" | Out-File $log -Encoding Unicode  # same encoding Tee-Object uses
 cmake -S (Join-Path $root 'core') -B $bld 2>&1 | Tee-Object -FilePath $log -Append
 if ($LASTEXITCODE) { throw "core configure failed (see $log)" }
 cmake --build $bld --config Debug 2>&1 | Tee-Object -FilePath $log -Append
