@@ -10,6 +10,7 @@
 #include <string>
 
 void runSyncTests();
+void runSessionTests();
 
 using namespace nexlevel;
 
@@ -156,6 +157,7 @@ int main() {
     testDiffProps();
     testLoopbackProbe();
     runSyncTests();
+    runSessionTests();
     std::printf("%d checks, %d failed\n", nltest::checks, nltest::failed);
     return nltest::failed == 0 ? 0 : 1;
 }

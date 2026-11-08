@@ -16,6 +16,8 @@
 
 | 2026-11-08 | Core sync engine (Linux, ASan/UBSan) | PASS | 107 checks: NetIds, op wire format incl. hostile input, replica rules, host sequencing/dedupe/forged ids, optimistic client view, 40 randomized 2-6 peer convergence runs |
 
+| 2026-11-08 | Session layer over real TCP (Linux, ASan/UBSan + 5x TSan) | PASS | embedded host + 3 clients: initial sync of pre-existing objects, 536 concurrent ops on 92 objects converged; GD 2.209x client refused (WrongGameVersion); leave/stop detected; 123 checks, 0 data races |
+
 ## Findings
 - `GameObject::m_uniqueID` is not a stable identity: after undo/redo the same object was logged as uid 3941 when re-added and uid 3942 when removed again. Confirms the design decision to use NexLevel NetIDs.
 - `EditorUI::deleteObject` and `LevelEditorLayer::undoLastAction/redoLastAction` are inline on Windows (also noted by ZyyeDev/MultiplayerEditor).
