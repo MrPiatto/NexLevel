@@ -84,6 +84,12 @@ if(NEXLEVEL_BUILD_TESTS)
     enable_testing()
     add_executable(nexlevel_core_tests tests/test_main.cpp tests/test_sync.cpp tests/test_session.cpp tests/test_upnp.cpp tests/test_crypto.cpp tests/test_relay.cpp tests/test_level_settings.cpp)
     target_link_libraries(nexlevel_core_tests PRIVATE nexlevel_core)
+    # Network tests drive raw sockets / mock servers with Asio directly.
+    target_include_directories(nexlevel_core_tests PRIVATE ${NEXLEVEL_ASIO_INCLUDE})
+    target_compile_definitions(nexlevel_core_tests PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)
+    if(WIN32)
+        target_compile_definitions(nexlevel_core_tests PRIVATE _WIN32_WINNT=0x0A00 WIN32_LEAN_AND_MEAN NOMINMAX)
+    endif()
     add_test(NAME nexlevel_core_tests COMMAND nexlevel_core_tests)
 endif()
 
