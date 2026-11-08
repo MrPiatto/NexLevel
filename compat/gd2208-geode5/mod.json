@@ -18,6 +18,12 @@
 			"description": "Address of the NexLevel relay (host or host:port). With a relay, rooms work from any network, including mobile data. Everyone in a room must use the same relay. Leave empty to play without one.",
 			"default": "",
 			"filter": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:"
+		},
+		"show-ping": {
+			"type": "bool",
+			"name": "Show ping in the editor",
+			"description": "Shows your ping to the room in the editor while you are in a room.",
+			"default": true
 		}
 	},
 	"tags": [

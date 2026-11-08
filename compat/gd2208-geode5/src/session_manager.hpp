@@ -56,6 +56,20 @@ public:
     std::vector<session::Presence> presences() const;
     std::string peerName(sync::PeerId peer) const;
 
+    // Ping and connection details (Collab menu, Info screen, editor ping label).
+    std::optional<int> pingOf(sync::PeerId peer) const;  // ms to the host; nullopt = not measured yet
+    std::uint32_t accountOf(sync::PeerId peer) const;     // GD account id, 0 = none
+    struct ConnectionInfo {
+        std::string role;          // "Host" / "Player"
+        std::string via;           // "Relay" / "Direct" / "Local network" / "Router (UPnP)"
+        std::string localIp;       // this PC on the local network
+        std::string publicIp;      // empty if unknown
+        std::uint16_t port = 0;    // host: room port; player: port connected to
+        session::PingStats ping;   // player: to the host; host: the slowest player
+        std::string pingSubject;   // whose ping `ping` is
+    };
+    ConnectionInfo connectionInfo() const;
+
     // Editor plumbing.
     void attachEditor(IEditorBridge* bridge);
     void detachEditor(IEditorBridge* bridge);

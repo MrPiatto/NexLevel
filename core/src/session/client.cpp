@@ -28,6 +28,8 @@ struct SessionClient::Impl {
         std::uint32_t generation = 0;
         Frame frame;
         std::string reason;
+        std::optional<ConnectTarget> via;     // Connected: which address won
+        Clock::time_point at = Clock::now();  // when it reached the network thread (ping timing)
     };
 
     GameTarget target;
@@ -60,6 +62,10 @@ struct SessionClient::Impl {
     Clock::time_point nextRetry{};
     bool identityReset = false;
     std::map<sync::PeerId, Presence> presences;
+    RttTracker rtt;
+    std::map<sync::PeerId, std::uint16_t> pingTable;
+    std::uint32_t accountId = 0;
+    std::optional<ConnectTarget> via;
     std::optional<Presence> lastSentPresence;
     Clock::time_point lastPresenceSent{};
     std::optional<crypto::KeyPair> keys;           // this connection's key pair
@@ -122,7 +128,7 @@ struct SessionClient::Impl {
             if (targets.empty()) { race->lastError = "no address"; finishFail(); return; }
             for (const auto& t : targets) {
                 auto resolver = std::make_shared<tcp::resolver>(net.io());
-                resolver->async_resolve(t.host, std::to_string(t.port), [this, gen, race, resolver, finishFail, relayRoom = t.relayRoom](std::error_code ec, tcp::resolver::results_type results) {
+                resolver->async_resolve(t.host, std::to_string(t.port), [this, gen, race, resolver, finishFail, relayRoom = t.relayRoom, target = t](std::error_code ec, tcp::resolver::results_type results) {
                     if (race->done) return;
                     if (ec) {
                         race->lastError = "resolve: " + ec.message();
@@ -132,7 +138,7 @@ struct SessionClient::Impl {
                     auto socket = std::make_shared<tcp::socket>(net.io());
                     race->sockets.push_back(socket);
                     // The winner becomes the session connection.
-                    auto win = [this, gen, race, socket] {
+                    auto win = [this, gen, race, socket, target] {
                         if (race->done) { std::error_code cec; socket->close(cec); return; }
                         race->done = true;
                         race->timer->cancel();
@@ -144,7 +150,7 @@ struct SessionClient::Impl {
                             [this](std::uint32_t g, Frame f) { events.push({Event::FrameIn, g, std::move(f), {}}); },
                             [this](std::uint32_t g, std::string r) { events.push({Event::Closed, g, {}, std::move(r)}); });
                         conn->start();
-                        events.push({Event::Connected, gen, {}, {}});
+                        events.push({Event::Connected, gen, {}, {}, target});
                     };
                     auto lose = [race, finishFail](std::string why) {
                         if (race->done) return;
@@ -228,6 +234,7 @@ struct SessionClient::Impl {
         }
         resumeToken = w.resumeToken;
         lastSentPresence.reset();  // announce our position again in the (new) room connection
+        rtt.reset();
         welcome.reset();
         reconnectAttempts = 0;
         error.clear();
@@ -325,9 +332,10 @@ std::vector<sync::NetId> SessionClient::pump() {
             case Impl::Event::Connected:
                 if (m->state == ClientState::Connecting) m->state = ClientState::Joining;
                 m->helloSent = true;
+                m->via = e.via;
                 m->keys = crypto::generateKeyPair();
                 if (!m->keys) { m->error = "no secure random source"; disconnect(); break; }
-                m->send(MsgType::Hello, encode(Hello{m->target, m->roomKey, m->resumeToken, m->name, m->keys->publicKey}));
+                m->send(MsgType::Hello, encode(Hello{m->target, m->roomKey, m->resumeToken, m->name, m->keys->publicKey, m->accountId}));
                 break;
             case Impl::Event::ConnectFailed:
             case Impl::Event::Closed:
@@ -386,6 +394,15 @@ std::vector<sync::NetId> SessionClient::pump() {
                             it = present ? std::next(it) : m->presences.erase(it);
                         }
                     }
+                } else if (type == MsgType::Ping) {
+                    if (auto ping = decodePing(e.frame.payload)) m->send(MsgType::Pong, encode(answer(*ping, e.at)));
+                } else if (type == MsgType::Pong) {
+                    if (auto pong = decodePong(e.frame.payload)) m->rtt.onPong(*pong, e.at);
+                } else if (type == MsgType::PingTable) {
+                    if (auto t = decodePingTable(e.frame.payload)) {
+                        m->pingTable.clear();
+                        for (auto& [peer, ms] : t->pings) m->pingTable[peer] = ms;
+                    }
                 } else if (type == MsgType::Presence) {
                     if (auto pr = decodePresence(e.frame.payload)) {
                         if (!m->replica || pr->peer != m->replica->self()) m->presences[pr->peer] = *pr;
@@ -411,6 +428,9 @@ std::vector<sync::NetId> SessionClient::pump() {
             }
         }
     }
+    if (m->state == ClientState::Joined) {
+        if (auto ping = m->rtt.due(Clock::now())) m->send(MsgType::Ping, encode(*ping));
+    }
     return changed;
 }
 
@@ -420,6 +440,11 @@ std::optional<sync::Op> SessionClient::submitLocal(sync::Op op) {
     if (m->state == ClientState::Joined) m->send(MsgType::Submit, encodeOpMsg(sent));
     return sent;  // while reconnecting it stays pending and is resent after the snapshot
 }
+
+void SessionClient::setAccountId(std::uint32_t accountId) { m->accountId = accountId; }
+PingStats SessionClient::pingStats() const { return m->rtt.stats(); }
+std::map<sync::PeerId, std::uint16_t> SessionClient::pingTable() const { return m->pingTable; }
+std::optional<ConnectTarget> SessionClient::connectedVia() const { return m->via; }
 
 void SessionClient::setLocalPresence(float x, float y, float zoom) {
     if (m->state != ClientState::Joined) return;

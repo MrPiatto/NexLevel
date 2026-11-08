@@ -3,6 +3,7 @@
 // Threading: networking runs on an internal thread; ALL session/sync logic runs on the caller's thread
 // inside pump() (call it once per frame from the game's main thread). Nothing here blocks.
 #include <nexlevel/core/session/messages.hpp>
+#include <nexlevel/core/session/ping.hpp>
 #include <nexlevel/core/sync/host_sequencer.hpp>
 
 #include <memory>
@@ -51,6 +52,11 @@ public:
 
     const sync::Replica& state() const noexcept;
     std::vector<PeerInfo> peers() const;  // host first
+
+    // The host player's GD account id, shown to others for the profile button.
+    void setAccountId(std::uint32_t accountId);
+    // A player's round-trip time to the host (nullopt if not in the room).
+    std::optional<PingStats> pingStats(sync::PeerId peer) const;
 
     // Editor presence (where each player is looking). Sent at most ~10 times per second.
     void setLocalPresence(float x, float y, float zoom);

@@ -3,7 +3,9 @@
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/TextInput.hpp>
 
+#include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace nexlevel::mod {
@@ -25,6 +27,8 @@ protected:
     void onCopy(cocos2d::CCObject*);
     void onLeave(cocos2d::CCObject*);
     void onKick(cocos2d::CCObject* sender);
+    void onInfo(cocos2d::CCObject*);
+    void onProfile(cocos2d::CCObject* sender);
 
     template <class T>
     T* track(T* node) {
@@ -35,6 +39,7 @@ protected:
     std::vector<cocos2d::CCNode*> m_dynamic;
     geode::TextInput* m_codeInput = nullptr;
     std::string m_shown;
+    std::vector<std::pair<std::uint16_t, cocos2d::CCLabelBMFont*>> m_pingLabels;
 };
 
 } // namespace nexlevel::mod

@@ -32,6 +32,7 @@ std::vector<std::uint8_t> encode(const Hello& m) {
     w.u64(m.resumeToken);
     w.str(m.displayName.substr(0, kMaxDisplayName));
     w.bytes(m.publicKey);
+    w.u32(m.accountId);
     return w.take();
 }
 bool validPresence(const Presence& p) noexcept {
@@ -84,6 +85,7 @@ std::vector<std::uint8_t> encode(const Roster& m) {
     for (const auto& p : m.peers) {
         w.u16(p.id);
         w.str(p.name.substr(0, kMaxDisplayName));
+        w.u32(p.accountId);
     }
     return w.take();
 }
@@ -139,8 +141,59 @@ std::optional<Hello> decodeHello(std::span<const std::uint8_t> p) {
     m.resumeToken = r.u64();
     m.displayName = r.str(kMaxDisplayName);
     auto pk = r.bytes(32);
+    m.accountId = r.u32();
     if (!r.atEnd()) return std::nullopt;
     std::copy(pk.begin(), pk.end(), m.publicKey.begin());
+    return m;
+}
+std::vector<std::uint8_t> encode(const Ping& m) {
+    ByteWriter w;
+    w.u32(m.seq);
+    w.u64(m.sentMicros);
+    return w.take();
+}
+std::vector<std::uint8_t> encode(const Pong& m) {
+    ByteWriter w;
+    w.u32(m.seq);
+    w.u64(m.sentMicros);
+    w.u32(m.holdMicros);
+    return w.take();
+}
+std::vector<std::uint8_t> encode(const PingTable& m) {
+    ByteWriter w;
+    w.u16(static_cast<std::uint16_t>(m.pings.size()));
+    for (auto& [peer, ms] : m.pings) {
+        w.u16(peer);
+        w.u16(ms);
+    }
+    return w.take();
+}
+std::optional<Ping> decodePing(std::span<const std::uint8_t> p) {
+    ByteReader r(p);
+    Ping m{r.u32(), r.u64()};
+    if (!r.atEnd()) return std::nullopt;
+    return m;
+}
+std::optional<Pong> decodePong(std::span<const std::uint8_t> p) {
+    ByteReader r(p);
+    Pong m;
+    m.seq = r.u32();
+    m.sentMicros = r.u64();
+    m.holdMicros = r.u32();
+    if (!r.atEnd()) return std::nullopt;
+    return m;
+}
+std::optional<PingTable> decodePingTable(std::span<const std::uint8_t> p) {
+    ByteReader r(p);
+    PingTable m;
+    auto n = r.u16();
+    if (!r.ok() || n > kMaxRosterPeers) return std::nullopt;
+    for (std::uint16_t i = 0; i < n; ++i) {
+        auto peer = r.u16();
+        auto ms = r.u16();
+        m.pings.emplace_back(peer, ms);
+    }
+    if (!r.atEnd()) return std::nullopt;
     return m;
 }
 std::optional<Presence> decodePresence(std::span<const std::uint8_t> p) {
@@ -224,6 +277,7 @@ std::optional<Roster> decodeRoster(std::span<const std::uint8_t> p) {
         PeerInfo pi;
         pi.id = r.u16();
         pi.name = r.str(kMaxDisplayName);
+        pi.accountId = r.u32();
         if (!r.ok()) return std::nullopt;
         m.peers.push_back(std::move(pi));
     }

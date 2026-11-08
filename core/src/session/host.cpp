@@ -6,6 +6,7 @@
 #include <nexlevel/core/relay/protocol.hpp>
 #include <nexlevel/core/session/room_code.hpp>
 
+#include <algorithm>
 #include <atomic>
 
 #include <chrono>
@@ -30,10 +31,13 @@ struct SessionHost::Impl {
         std::uint32_t conn = 0;
         Frame frame;
         std::string reason;
+        Clock::time_point at = Clock::now();  // when it reached the network thread (ping timing)
     };
     struct Peer {
         sync::PeerId id = 0;
         std::string name;
+        std::uint32_t accountId = 0;
+        RttTracker rtt;
         std::uint64_t token = 0;
         bool joined = false;
         std::optional<crypto::SecureChannel> channel;  // set once the key exchange is done
@@ -256,12 +260,35 @@ struct SessionHost::Impl {
         }
     }
     std::vector<PeerInfo> roster() const {
-        std::vector<PeerInfo> out{{kHostPeer, hostName}};
+        std::vector<PeerInfo> out{{kHostPeer, hostName, hostAccountId}};
         for (auto& [_, p] : peers) {
-            if (p.joined) out.push_back({p.id, p.name});
+            if (p.joined) out.push_back({p.id, p.name, p.accountId});
         }
         return out;
     }
+    std::uint32_t hostAccountId = 0;
+    Clock::time_point lastPingTable{};
+
+    void pingPeers() {
+        const auto now = Clock::now();
+        for (auto& [conn, p] : peers) {
+            if (!p.joined) continue;
+            if (auto ping = p.rtt.due(now)) sendTo(conn, MsgType::Ping, encode(*ping));
+        }
+        if (now - lastPingTable < std::chrono::seconds(2)) return;
+        lastPingTable = now;
+        PingTable table;
+        for (auto& [conn, p] : peers) {
+            if (!p.joined) continue;
+            if (auto ms = p.rtt.stats().ms) table.pings.emplace_back(p.id, static_cast<std::uint16_t>(std::min(*ms + 0.5f, 65535.f)));
+        }
+        if (table.pings.empty()) return;
+        auto payload = encode(table);
+        for (auto& [conn, p] : peers) {
+            if (p.joined) sendTo(conn, MsgType::PingTable, payload);
+        }
+    }
+
     std::optional<Presence> hostPresence;
     Clock::time_point lastHostPresence{};
 
@@ -329,6 +356,7 @@ struct SessionHost::Impl {
             do { p.token = crypto::secureRandomU64(); } while (p.token == 0 || identities.contains(p.token));
             identities[p.token] = Identity{p.id, p.name, true, {}};
         }
+        p.accountId = hello->accountId;
         // Key exchange: our key goes out in the clear, everything after it is encrypted.
         auto keys = crypto::generateKeyPair();
         auto channel = keys ? crypto::SecureChannel::establish(crypto::Side::Host, *keys, hello->publicKey) : std::nullopt;
@@ -350,7 +378,7 @@ struct SessionHost::Impl {
         }
     }
 
-    void handleFrame(std::uint32_t conn, Peer& p, const Frame& f, std::vector<sync::NetId>& changed) {
+    void handleFrame(std::uint32_t conn, Peer& p, const Frame& f, Clock::time_point arrival, std::vector<sync::NetId>& changed) {
         if (!p.joined) {
             handleHello(conn, p, f);
             return;
@@ -364,10 +392,18 @@ struct SessionHost::Impl {
             closeConn(conn, "message failed authentication");
             return;
         }
-        handleSecureFrame(conn, p, *inner, changed);
+        handleSecureFrame(conn, p, *inner, arrival, changed);
     }
 
-    void handleSecureFrame(std::uint32_t conn, Peer& p, const Frame& f, std::vector<sync::NetId>& changed) {
+    void handleSecureFrame(std::uint32_t conn, Peer& p, const Frame& f, Clock::time_point arrival, std::vector<sync::NetId>& changed) {
+        if (static_cast<MsgType>(f.type) == MsgType::Ping) {
+            if (auto ping = decodePing(f.payload)) sendTo(conn, MsgType::Pong, encode(answer(*ping, arrival)));
+            return;
+        }
+        if (static_cast<MsgType>(f.type) == MsgType::Pong) {
+            if (auto pong = decodePong(f.payload)) p.rtt.onPong(*pong, arrival);
+            return;
+        }
         if (static_cast<MsgType>(f.type) == MsgType::PresenceUpdate) {
             auto pr = decodePresence(f.payload);
             if (!pr) { closeConn(conn, "malformed presence"); return; }
@@ -506,12 +542,13 @@ std::vector<sync::NetId> SessionHost::pump() {
             }
             case Impl::Event::FrameIn: {
                 auto it = m->peers.find(e.conn);
-                if (it != m->peers.end()) m->handleFrame(e.conn, it->second, e.frame, changed);
+                if (it != m->peers.end()) m->handleFrame(e.conn, it->second, e.frame, e.at, changed);
                 break;
             }
         }
     }
     m->expireIdentities();
+    m->pingPeers();
     return changed;
 }
 
@@ -527,6 +564,15 @@ sync::Op SessionHost::submitLocal(sync::Op op) {
 sync::NetId SessionHost::newId() { return m->ids.next(); }
 const sync::Replica& SessionHost::state() const noexcept { return m->sequencer.state(); }
 std::vector<PeerInfo> SessionHost::peers() const { return m->roster(); }
+
+void SessionHost::setAccountId(std::uint32_t accountId) { m->hostAccountId = accountId; }
+
+std::optional<PingStats> SessionHost::pingStats(sync::PeerId peer) const {
+    for (auto& [_, p] : m->peers) {
+        if (p.joined && p.id == peer) return p.rtt.stats();
+    }
+    return std::nullopt;
+}
 
 void SessionHost::setLocalPresence(float x, float y, float zoom) {
     Presence pr{kHostPeer, x, y, zoom};

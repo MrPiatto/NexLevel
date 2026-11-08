@@ -2,8 +2,10 @@
 // Session client: connects to a host, joins, keeps a ClientReplica in sync.
 // Same threading model as SessionHost: call pump() once per frame on the game's main thread.
 #include <nexlevel/core/session/messages.hpp>
+#include <nexlevel/core/session/ping.hpp>
 #include <nexlevel/core/sync/client_replica.hpp>
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -50,6 +52,12 @@ public:
     // A local editor change. While Joined or Reconnecting (sent after reconnecting); returns the op.
     std::optional<sync::Op> submitLocal(sync::Op op);
     std::optional<sync::NetId> newId();
+
+    // This player's GD account id (sent at join, shown to others for the profile button).
+    void setAccountId(std::uint32_t accountId);
+    PingStats pingStats() const;                              // round trip to the host
+    std::map<sync::PeerId, std::uint16_t> pingTable() const;  // everyone's ping to the host (ms)
+    std::optional<ConnectTarget> connectedVia() const;        // address of the current connection
 
     // Editor presence (where each player is looking). Sent at most ~10 times per second.
     void setLocalPresence(float x, float y, float zoom);

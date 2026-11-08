@@ -6,7 +6,7 @@
 namespace nexlevel {
 
 // Bumped on any incompatible wire-format change. Identical on all game targets.
-inline constexpr std::uint16_t kProtocolVersion = 5;  // v5: presence (v4: encryption, v3: chunked join + resume)
+inline constexpr std::uint16_t kProtocolVersion = 6;  // v6: ping + account ids (v5: presence, v4: encryption, v3: chunked join)
 
 // Game line a build targets. V1 rule: host and client must match exactly.
 enum class GameTarget : std::uint8_t {

@@ -5,7 +5,7 @@ Nothing counts as supported until it passes here. Use `tools\bot.ps1` when there
 | # | Test | How | Pass when |
 |---|---|---|---|
 | 1 | Core | `tools\test-core.ps1` | `0 failed` |
-| 2 | Build | `tools\build.ps1 -Target gd2208` | builds, GD loads `NexLevel loaded ... protocol v5` |
+| 2 | Build | `tools\build.ps1 -Target gd2208` | builds, GD loads `NexLevel loaded ... protocol v6` |
 | 3 | Host + join | Host room, Copy, `tools\bot.ps1 join` | bot's 5 blocks appear; move, rotate, colour, delete arrive; no crash |
 | 4 | Host edits reach players | Place/move/delete while the bot is in the room | bot prints each change |
 | 5 | Level settings | Change a colour channel, background, ground, song | a second player sees the same; the same after leaving and rejoining |
@@ -17,4 +17,5 @@ Nothing counts as supported until it passes here. Use `tools\bot.ps1` when there
 | 11 | Relay | `tools\bot.ps1 relay`, setting = 127.0.0.1, Host, bot join with `NEXLEVEL_RELAY` | 10-character code works |
 | 12 | Undo / redo / copy-paste | Do each with a player in the room | the player ends up with the same level |
 | 13 | Quit while hosting | Close GD with a room open | no crash |
+| 15 | Ping / Info | Collab menu with the bot in the room; press Info | ping shows in ms; graph moves; IP hidden until Show; profile button opens the GD profile |
 | 14 | Real distance | A friend on another network (ideally mobile data) via relay | joins and edits |

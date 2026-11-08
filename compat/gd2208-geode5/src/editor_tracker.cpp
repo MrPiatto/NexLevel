@@ -13,6 +13,7 @@
 #include <nexlevel/core/sync/object_props.hpp>
 
 #include "level_settings_adapter.hpp"
+#include "ping_hud.hpp"
 #include "presence_overlay.hpp"
 #include "session_manager.hpp"
 
@@ -442,6 +443,7 @@ class $modify(NLEditorUI, EditorUI) {
 
     void nlTick(float) {
         if (g_tracker) g_tracker->tick(this->getSelectedObjects(), m_selectedObject);
+        nexlevel::mod::updatePingHud(this);
     }
 
     void onDeleteSelected(CCObject* sender) {

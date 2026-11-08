@@ -27,6 +27,9 @@ enum class MsgType : std::uint16_t {
     Rejected = 12,     // host -> author: op refused, will never be sequenced
     PresenceUpdate = 13,  // client -> host: where I am looking in the editor (not level content)
     Presence = 14,        // host -> others: a player's editor position (rate limited, not stored)
+    Ping = 15,            // either way, every second: measure round-trip time
+    Pong = 16,            // answer to Ping (echoes it, says how long it waited before answering)
+    PingTable = 17,       // host -> all: everyone's ping to the host
     Sealed = 20,       // encrypted envelope around any of the above (see crypto/secure_channel.hpp)
 };
 
@@ -35,6 +38,7 @@ enum class RefuseReason : std::uint8_t { WrongGameVersion = 1, SessionFull = 2, 
 struct PeerInfo {
     sync::PeerId id = 0;
     std::string name;
+    std::uint32_t accountId = 0;  // GD account (for the profile button); self-reported, 0 = none
     bool operator==(const PeerInfo&) const = default;
 };
 struct Roster {
@@ -48,6 +52,7 @@ struct Hello {
     std::uint64_t resumeToken = 0;  // 0 = new player; otherwise reclaim the same identity after a drop
     std::string displayName;
     std::array<std::uint8_t, 32> publicKey{};  // client's X25519 key for this connection
+    std::uint32_t accountId = 0;
 };
 struct Secure {
     std::array<std::uint8_t, 32> publicKey{};  // host's X25519 key for this connection
@@ -84,6 +89,19 @@ struct Presence {
 };
 bool validPresence(const Presence& p) noexcept;
 
+struct Ping {
+    std::uint32_t seq = 0;
+    std::uint64_t sentMicros = 0;  // sender's clock, echoed back
+};
+struct Pong {
+    std::uint32_t seq = 0;
+    std::uint64_t sentMicros = 0;
+    std::uint32_t holdMicros = 0;  // time between receiving the Ping and sending this (subtracted)
+};
+struct PingTable {
+    std::vector<std::pair<sync::PeerId, std::uint16_t>> pings;  // peer -> ms to the host
+};
+
 inline constexpr std::size_t kMaxDisplayName = 32;
 inline constexpr std::size_t kChunkTargetBytes = 192 * 1024;  // well under the 1 MiB frame cap
 inline constexpr std::size_t kMaxChunkEntries = 200'000;
@@ -91,6 +109,9 @@ inline constexpr std::size_t kMaxChunkEntries = 200'000;
 std::vector<std::uint8_t> encode(const Hello& m);
 std::vector<std::uint8_t> encode(const Secure& m);
 std::vector<std::uint8_t> encode(const Presence& m);
+std::vector<std::uint8_t> encode(const Ping& m);
+std::vector<std::uint8_t> encode(const Pong& m);
+std::vector<std::uint8_t> encode(const PingTable& m);
 std::vector<std::uint8_t> encode(const Welcome& m);
 std::vector<std::uint8_t> encode(const SnapshotEnd& m);
 std::vector<std::uint8_t> encode(const Refuse& m);
@@ -103,6 +124,9 @@ std::vector<std::vector<std::uint8_t>> encodeSnapshotChunks(const sync::Replica&
 std::optional<Hello> decodeHello(std::span<const std::uint8_t> p);
 std::optional<Secure> decodeSecure(std::span<const std::uint8_t> p);
 std::optional<Presence> decodePresence(std::span<const std::uint8_t> p);
+std::optional<Ping> decodePing(std::span<const std::uint8_t> p);
+std::optional<Pong> decodePong(std::span<const std::uint8_t> p);
+std::optional<PingTable> decodePingTable(std::span<const std::uint8_t> p);
 std::optional<Welcome> decodeWelcome(std::span<const std::uint8_t> p);
 std::optional<SnapshotChunk> decodeSnapshotChunk(std::span<const std::uint8_t> p);
 std::optional<SnapshotEnd> decodeSnapshotEnd(std::span<const std::uint8_t> p);

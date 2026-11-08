@@ -16,6 +16,11 @@ No IP addresses, no router settings.
 - **Level settings:** colour channels, background, ground, fonts, start options, guidelines and the song.
 - **Everyone's view:** a coloured frame with each player's name shows where they are working.
 
+## Connection
+- Each player's ping is listed in the Collab menu, with a button to open their GD profile.
+- Your own ping is shown in the editor. You can turn it off in the mod settings.
+- **Info** shows how you are connected, your IP (hidden until you tap Show), the port and your internet quality: Demon, Insane, High, Normal or Bad. A live ping graph covers the last minute.
+
 ## Rooms
 - Up to 16 players.
 - If the host leaves the editor, the room stays open and everyone keeps building.

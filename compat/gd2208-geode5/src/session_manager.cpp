@@ -79,6 +79,7 @@ bool SessionManager::hostRoom(std::string* error) {
     if (role() != Role::None) { if (error) *error = "Already in a session"; return false; }
     if (!m_editor) { if (error) *error = "Open the editor first"; return false; }
     auto host = std::make_unique<session::SessionHost>(static_cast<GameTarget>(NEXLEVEL_TARGET), displayName());
+    host->setAccountId(static_cast<std::uint32_t>(std::max(0, GJAccountManager::sharedState()->m_accountID)));
     std::string err;
     if (!host->start(kDefaultPort, false, &err)) {
         if (error) *error = "Could not open port " + std::to_string(kDefaultPort) + ": " + err;
@@ -110,6 +111,7 @@ bool SessionManager::join(const std::string& roomCode, std::string* error) {
     }
     m_client = std::make_unique<session::SessionClient>(static_cast<GameTarget>(NEXLEVEL_TARGET), displayName());
     if (relayServer) m_client->setRelayServer(relayServer->first, relayServer->second);
+    m_client->setAccountId(static_cast<std::uint32_t>(std::max(0, GJAccountManager::sharedState()->m_accountID)));
     m_lastClientState = session::ClientState::Idle;
     m_lastJoined = false;
     m_client->connectCode(roomCode);
@@ -162,6 +164,76 @@ std::string SessionManager::peerName(sync::PeerId peer) const {
         if (p.id == peer) return p.name;
     }
     return "Player";
+}
+
+std::optional<int> SessionManager::pingOf(sync::PeerId peer) const {
+    if (m_host) {
+        if (peer == session::SessionHost::kHostPeer) return 0;
+        auto st = m_host->pingStats(peer);
+        if (st && st->ms) return static_cast<int>(*st->ms + .5f);
+        return std::nullopt;
+    }
+    if (m_client) {
+        if (peer == session::SessionHost::kHostPeer) return 0;
+        if (m_client->peerId() == peer) {
+            auto st = m_client->pingStats();
+            if (st.ms) return static_cast<int>(*st.ms + .5f);
+        }
+        auto table = m_client->pingTable();
+        if (auto it = table.find(peer); it != table.end()) return it->second;
+    }
+    return std::nullopt;
+}
+
+std::uint32_t SessionManager::accountOf(sync::PeerId peer) const {
+    for (auto& p : peers()) {
+        if (p.id == peer) return p.accountId;
+    }
+    return 0;
+}
+
+SessionManager::ConnectionInfo SessionManager::connectionInfo() const {
+    ConnectionInfo info;
+    info.localIp = net::primaryLocalIPv4().value_or("-");
+    if (m_host) {
+        info.role = "Host";
+        info.port = m_host->port();
+        if (m_host->relayRoomId() != 0) info.via = "Relay";
+        else if (m_mapper && m_mapper->state() == net::MapState::Mapped) info.via = "Router (UPnP)";
+        else info.via = "Local network";
+        if (m_mapper) {
+            if (auto pub = m_mapper->externalIPv4()) {
+                session::RoomAddress a;
+                a.ipv4 = *pub;
+                info.publicIp = a.ipString();
+            }
+        }
+        // The host has no ping of its own: show the slowest player's connection.
+        float worst = -1.f;
+        for (auto& p : m_host->peers()) {
+            if (p.id == session::SessionHost::kHostPeer) continue;
+            auto st = m_host->pingStats(p.id);
+            if (st && st->ms && st->avgMs > worst) {
+                worst = st->avgMs;
+                info.ping = *st;
+                info.pingSubject = p.name;
+            }
+        }
+    } else if (m_client) {
+        info.role = "Player";
+        info.ping = m_client->pingStats();
+        info.pingSubject = "to the host";
+        if (auto via = m_client->connectedVia()) {
+            info.port = via->port;
+            if (via->relayRoom != 0) info.via = "Relay";
+            else {
+                auto ip = session::parseIPv4(via->host);
+                bool lan = ip && net::isPrivateIPv4(*ip);
+                info.via = lan ? "Local network" : "Direct";
+            }
+        }
+    }
+    return info;
 }
 
 void SessionManager::releaseMapper() {

@@ -1,36 +1,17 @@
 #include "collab_popup.hpp"
 
+#include "info_popup.hpp"
 #include "session_manager.hpp"
+#include "ui_common.hpp"
 
 #include <Geode/modify/EditorPauseLayer.hpp>
 
 #include <cctype>
 
 using namespace geode::prelude;
+using namespace nexlevel::mod::ui;
 
 namespace nexlevel::mod {
-
-namespace {
-const ccColor3B kPurple{150, 70, 255};
-const ccColor3B kPurpleSoft{190, 140, 255};
-const ccColor3B kPurpleDark{90, 40, 160};
-const ccColor3B kPanel{14, 6, 28};
-const ccColor3B kGrey{170, 160, 190};
-const ccColor3B kRed{220, 50, 90};
-
-CCLabelBMFont* label(const std::string& text, const char* font, float scale, ccColor3B color = {255, 255, 255}) {
-    auto* l = CCLabelBMFont::create(text.c_str(), font);
-    l->setScale(scale);
-    l->setColor(color);
-    return l;
-}
-
-CCMenuItemSpriteExtra* button(const char* caption, ccColor3B color, float scale, CCObject* target, SEL_MenuHandler sel) {
-    auto* spr = ButtonSprite::create(caption, "bigFont.fnt", "GJ_button_04.png", scale);
-    spr->m_BGSprite->setColor(color);
-    return CCMenuItemSpriteExtra::create(spr, target, sel);
-}
-} // namespace
 
 CollabPopup* CollabPopup::create() {
     auto* ret = new CollabPopup();
@@ -72,7 +53,17 @@ std::string CollabPopup::signature() const {
 }
 
 void CollabPopup::refresh(float) {
-    if (signature() != m_shown) rebuild();
+    if (signature() != m_shown) {
+        rebuild();
+        return;
+    }
+    // Pings change every second: update the labels in place instead of rebuilding the menu.
+    auto* sm = SessionManager::get();
+    for (auto& [peer, l] : m_pingLabels) {
+        auto ms = sm->pingOf(peer);
+        l->setString(ms ? (std::to_string(*ms) + "ms").c_str() : "...");
+        l->setColor(ms ? pingColor(*ms) : kGrey);
+    }
 }
 
 void CollabPopup::rebuild() {
@@ -80,6 +71,7 @@ void CollabPopup::rebuild() {
     for (auto* n : m_dynamic) n->removeFromParent();
     m_dynamic.clear();
     m_codeInput = nullptr;
+    m_pingLabels.clear();
     m_shown = signature();
 
     auto* sm = SessionManager::get();
@@ -125,6 +117,9 @@ void CollabPopup::rebuild() {
         m_mainLayer->addChildAtPosition(track(label(online, "chatFont.fnt", .5f, good ? kPurpleSoft : kGrey)), Anchor::Top, {0.f, -121.f});
     }
 
+    m_buttonMenu->addChildAtPosition(track(button("Info", kPurpleDark, .45f, this, menu_selector(CollabPopup::onInfo))),
+        Anchor::TopRight, {-36.f, -22.f});
+
     // Players in the room.
     auto peers = sm->peers();
     auto self = sm->selfId();
@@ -136,13 +131,33 @@ void CollabPopup::rebuild() {
         if (self && p.id == *self) name += " (you)";
         auto* nameLabel = track(label(name, "bigFont.fnt", .4f));
         nameLabel->setAnchorPoint({0.f, .5f});
-        m_mainLayer->addChildAtPosition(nameLabel, Anchor::Center, {-160.f, y});
+        nameLabel->limitLabelWidth(160.f, .4f, .2f);
+        m_mainLayer->addChildAtPosition(nameLabel, Anchor::Center, {-165.f, y});
+
+        // Ping to the host (the host itself has none).
+        if (p.id != session::SessionHost::kHostPeer) {
+            auto ms = sm->pingOf(p.id);
+            auto* pingLabel = track(label(ms ? std::to_string(*ms) + "ms" : "...", "bigFont.fnt", .3f, ms ? pingColor(*ms) : kGrey));
+            m_mainLayer->addChildAtPosition(pingLabel, Anchor::Center, {22.f, y});
+            m_pingLabels.emplace_back(p.id, pingLabel);
+        }
+
+        // GD profile.
+        if (p.accountId != 0) {
+            CCNode* icon = optionalSprite("GJ_profileButton_001.png");
+            if (icon) icon->setScale(.4f);
+            else icon = ButtonSprite::create("P", "bigFont.fnt", "GJ_button_04.png", .4f);
+            auto* profile = track(CCMenuItemSpriteExtra::create(icon, this, menu_selector(CollabPopup::onProfile)));
+            profile->setTag(static_cast<int>(p.accountId));
+            m_buttonMenu->addChildAtPosition(profile, Anchor::Center, {62.f, y});
+        }
+
         if (p.id == session::SessionHost::kHostPeer) {
-            m_mainLayer->addChildAtPosition(track(label("HOST", "goldFont.fnt", .45f, kPurpleSoft)), Anchor::Center, {95.f, y});
+            m_mainLayer->addChildAtPosition(track(label("HOST", "goldFont.fnt", .45f, kPurpleSoft)), Anchor::Center, {115.f, y});
         } else if (role == Role::Host) {
             auto* kick = track(button("Kick", kRed, .5f, this, menu_selector(CollabPopup::onKick)));
             kick->setTag(p.id);
-            m_buttonMenu->addChildAtPosition(kick, Anchor::Center, {140.f, y});
+            m_buttonMenu->addChildAtPosition(kick, Anchor::Center, {150.f, y});
         }
     }
     if (peers.size() > maxRows) {
@@ -215,6 +230,16 @@ void CollabPopup::onLeave(CCObject*) {
     }
     SessionManager::get()->leave();
     rebuild();
+}
+
+void CollabPopup::onInfo(CCObject*) {
+    if (auto* p = InfoPopup::create()) p->show();
+}
+
+void CollabPopup::onProfile(CCObject* sender) {
+    const int account = static_cast<CCNode*>(sender)->getTag();
+    if (account <= 0) return;
+    ProfilePage::create(account, account == GJAccountManager::sharedState()->m_accountID)->show();
 }
 
 void CollabPopup::onKick(CCObject* sender) {

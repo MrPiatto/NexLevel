@@ -16,6 +16,7 @@ void runCryptoTests();
 void runRelayTests();
 void runLevelSettingsTests();
 void runPresenceTests();
+void runPingTests();
 
 using namespace nexlevel;
 
@@ -168,6 +169,7 @@ int main() {
     runRelayTests();
     runLevelSettingsTests();
     runPresenceTests();
+    runPingTests();
     std::printf("%d checks, %d failed\n", nltest::checks, nltest::failed);
     return nltest::failed == 0 ? 0 : 1;
 }
