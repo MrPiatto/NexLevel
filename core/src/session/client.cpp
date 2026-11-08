@@ -2,6 +2,7 @@
 
 #include "../net/connection.hpp"
 
+#include <nexlevel/core/crypto/secure_channel.hpp>
 #include <nexlevel/core/session/room_code.hpp>
 #include <nexlevel/core/net/local_address.hpp>
 
@@ -55,6 +56,8 @@ struct SessionClient::Impl {
     int reconnectAttempts = 0;
     Clock::time_point nextRetry{};
     bool identityReset = false;
+    std::optional<crypto::KeyPair> keys;           // this connection's key pair
+    std::optional<crypto::SecureChannel> channel;  // set once the host's key arrived
 
     // Snapshot being received.
     std::optional<Welcome> welcome;
@@ -64,7 +67,8 @@ struct SessionClient::Impl {
     Impl(GameTarget t, std::string n) : target(t), name(std::move(n)) {}
 
     void send(MsgType type, std::vector<std::uint8_t> payload) {
-        auto bytes = encodeFrame(static_cast<std::uint16_t>(type), payload);
+        auto bytes = channel ? encodeFrame(static_cast<std::uint16_t>(MsgType::Sealed), channel->seal(static_cast<std::uint16_t>(type), payload))
+                             : encodeFrame(static_cast<std::uint16_t>(type), payload);
         net.post([this, bytes = std::move(bytes)]() mutable {
             if (conn) conn->send(std::move(bytes));
         });
@@ -77,6 +81,8 @@ struct SessionClient::Impl {
         }
         attemptInFlight = true;
         helloSent = false;
+        channel.reset();
+        keys.reset();
         const auto gen = ++generation;
         net.post([this, gen, targets = targets] {
             if (conn) {
@@ -276,13 +282,32 @@ std::vector<sync::NetId> SessionClient::pump() {
             case Impl::Event::Connected:
                 if (m->state == ClientState::Connecting) m->state = ClientState::Joining;
                 m->helloSent = true;
-                m->send(MsgType::Hello, encode(Hello{m->target, m->roomKey, m->resumeToken, m->name}));
+                m->keys = crypto::generateKeyPair();
+                if (!m->keys) { m->error = "no secure random source"; disconnect(); break; }
+                m->send(MsgType::Hello, encode(Hello{m->target, m->roomKey, m->resumeToken, m->name, m->keys->publicKey}));
                 break;
             case Impl::Event::ConnectFailed:
             case Impl::Event::Closed:
                 m->connectionLost(e.reason);
                 break;
             case Impl::Event::FrameIn: {
+                // Only the key exchange and a refusal travel in the clear; everything else must be sealed.
+                if (m->channel) {
+                    if (static_cast<MsgType>(e.frame.type) != MsgType::Sealed) { m->error = "unencrypted message from host"; disconnect(); break; }
+                    auto inner = m->channel->open(e.frame.payload);
+                    if (!inner) { m->error = "message from host failed authentication"; disconnect(); break; }
+                    e.frame = std::move(*inner);
+                    if (static_cast<MsgType>(e.frame.type) == MsgType::Secure) { m->error = "unexpected key exchange"; disconnect(); break; }
+                } else if (static_cast<MsgType>(e.frame.type) == MsgType::Secure) {
+                    auto sec = decodeSecure(e.frame.payload);
+                    if (sec && m->keys) m->channel = crypto::SecureChannel::establish(crypto::Side::Client, *m->keys, sec->publicKey);
+                    if (!m->channel) { m->error = "key exchange failed"; disconnect(); }
+                    break;
+                } else if (static_cast<MsgType>(e.frame.type) != MsgType::Refuse) {
+                    m->error = "host did not encrypt the session";
+                    disconnect();
+                    break;
+                }
                 const auto type = static_cast<MsgType>(e.frame.type);
                 const bool joining = m->state == ClientState::Joining || m->state == ClientState::Reconnecting;
                 if (joining && type == MsgType::Welcome) {

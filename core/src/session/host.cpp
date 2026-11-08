@@ -2,12 +2,12 @@
 
 #include "../net/connection.hpp"
 
+#include <nexlevel/core/crypto/secure_channel.hpp>
 #include <nexlevel/core/session/room_code.hpp>
 
 #include <chrono>
 #include <future>
 #include <map>
-#include <random>
 #include <thread>
 #include <unordered_map>
 
@@ -32,6 +32,7 @@ struct SessionHost::Impl {
         std::string name;
         std::uint64_t token = 0;
         bool joined = false;
+        std::optional<crypto::SecureChannel> channel;  // set once the key exchange is done
     };
     struct Identity {  // survives the connection, for reconnects
         sync::PeerId id = 0;
@@ -60,7 +61,6 @@ struct SessionHost::Impl {
     std::map<std::uint32_t, Peer> peers;
     std::unordered_map<std::uint64_t, Identity> identities;  // by resume token
     sync::PeerId nextPeer = kHostPeer + 1;
-    std::mt19937_64 rng{std::random_device{}()};
 
     Impl(GameTarget t, std::string n) : target(t), hostName(std::move(n)) {}
 
@@ -86,7 +86,14 @@ struct SessionHost::Impl {
     }
 
     void sendTo(std::uint32_t conn, MsgType type, std::vector<std::uint8_t> payload, bool closeAfter = false) {
-        auto bytes = encodeFrame(static_cast<std::uint16_t>(type), payload);
+        std::vector<std::uint8_t> bytes;
+        auto pit = peers.find(conn);
+        if (pit != peers.end() && pit->second.channel) {
+            bytes = encodeFrame(static_cast<std::uint16_t>(MsgType::Sealed),
+                                pit->second.channel->seal(static_cast<std::uint16_t>(type), payload));
+        } else {
+            bytes = encodeFrame(static_cast<std::uint16_t>(type), payload);
+        }
         net.post([this, conn, closeAfter, bytes = std::move(bytes)]() mutable {
             auto it = conns.find(conn);
             if (it == conns.end()) return;
@@ -167,9 +174,20 @@ struct SessionHost::Impl {
             }
             p.id = nextPeer++;
             p.name = hello->displayName;
-            do { p.token = rng(); } while (p.token == 0 || identities.contains(p.token));
+            do { p.token = crypto::secureRandomU64(); } while (p.token == 0 || identities.contains(p.token));
             identities[p.token] = Identity{p.id, p.name, true, {}};
         }
+        // Key exchange: our key goes out in the clear, everything after it is encrypted.
+        auto keys = crypto::generateKeyPair();
+        auto channel = keys ? crypto::SecureChannel::establish(crypto::Side::Host, *keys, hello->publicKey) : std::nullopt;
+        if (!channel) {
+            if (resumed) identities[p.token].connected = false;
+            else identities.erase(p.token);
+            sendTo(conn, MsgType::Refuse, encode(Refuse{RefuseReason::BadHello, target}), true);
+            return;
+        }
+        sendTo(conn, MsgType::Secure, encode(Secure{keys->publicKey}));
+        p.channel = std::move(channel);
         p.joined = true;
         sendJoinPackage(conn, p, resumed);
         broadcastRoster();
@@ -180,6 +198,19 @@ struct SessionHost::Impl {
             handleHello(conn, p, f);
             return;
         }
+        if (static_cast<MsgType>(f.type) != MsgType::Sealed || !p.channel) {
+            closeConn(conn, "unencrypted message");
+            return;
+        }
+        auto inner = p.channel->open(f.payload);
+        if (!inner) {
+            closeConn(conn, "message failed authentication");
+            return;
+        }
+        handleSecureFrame(conn, p, *inner, changed);
+    }
+
+    void handleSecureFrame(std::uint32_t conn, Peer& p, const Frame& f, std::vector<sync::NetId>& changed) {
         if (static_cast<MsgType>(f.type) != MsgType::Submit) {
             closeConn(conn, "unexpected message");
             return;
@@ -229,7 +260,7 @@ std::optional<std::uint16_t> SessionHost::start(std::uint16_t port, bool loopbac
         return std::nullopt;
     }
     m->port = m->acceptor->local_endpoint(ec).port();
-    m->roomKey = static_cast<std::uint16_t>(m->rng() & kRoomKeyMask);
+    m->roomKey = static_cast<std::uint16_t>(crypto::secureRandomU64() & kRoomKeyMask);
     m->acceptNext();
     m->net.start();
     m->running = true;

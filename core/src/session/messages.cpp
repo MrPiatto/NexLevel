@@ -1,5 +1,7 @@
 #include <nexlevel/core/session/messages.hpp>
 
+#include <algorithm>
+
 namespace nexlevel::session {
 
 namespace {
@@ -29,6 +31,12 @@ std::vector<std::uint8_t> encode(const Hello& m) {
     w.u16(m.roomKey);
     w.u64(m.resumeToken);
     w.str(m.displayName.substr(0, kMaxDisplayName));
+    w.bytes(m.publicKey);
+    return w.take();
+}
+std::vector<std::uint8_t> encode(const Secure& m) {
+    ByteWriter w;
+    w.bytes(m.publicKey);
     return w.take();
 }
 std::vector<std::uint8_t> encode(const Welcome& m) {
@@ -118,7 +126,17 @@ std::optional<Hello> decodeHello(std::span<const std::uint8_t> p) {
     m.roomKey = r.u16();
     m.resumeToken = r.u64();
     m.displayName = r.str(kMaxDisplayName);
+    auto pk = r.bytes(32);
     if (!r.atEnd()) return std::nullopt;
+    std::copy(pk.begin(), pk.end(), m.publicKey.begin());
+    return m;
+}
+std::optional<Secure> decodeSecure(std::span<const std::uint8_t> p) {
+    ByteReader r(p);
+    Secure m;
+    auto pk = r.bytes(32);
+    if (!r.atEnd()) return std::nullopt;
+    std::copy(pk.begin(), pk.end(), m.publicKey.begin());
     return m;
 }
 std::optional<Welcome> decodeWelcome(std::span<const std::uint8_t> p) {

@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <array>
 #include <vector>
 
 namespace nexlevel::session {
@@ -20,9 +21,11 @@ enum class MsgType : std::uint16_t {
     Closing = 6,       // host -> all: the host closed the room
     SnapshotChunk = 7, // host -> joining client: part of the level state
     SnapshotEnd = 8,   // host -> joining client: snapshot complete, live ops follow
+    Secure = 9,        // host -> client (plain): host key; from here on every frame is Sealed
     Submit = 10,       // client -> host: a local op
     Sequenced = 11,    // host -> all: an op in global order (also the author's ack)
     Rejected = 12,     // host -> author: op refused, will never be sequenced
+    Sealed = 20,       // encrypted envelope around any of the above (see crypto/secure_channel.hpp)
 };
 
 enum class RefuseReason : std::uint8_t { WrongGameVersion = 1, SessionFull = 2, BadHello = 3, WrongRoomCode = 4 };
@@ -42,6 +45,10 @@ struct Hello {
     std::uint16_t roomKey = 0;
     std::uint64_t resumeToken = 0;  // 0 = new player; otherwise reclaim the same identity after a drop
     std::string displayName;
+    std::array<std::uint8_t, 32> publicKey{};  // client's X25519 key for this connection
+};
+struct Secure {
+    std::array<std::uint8_t, 32> publicKey{};  // host's X25519 key for this connection
 };
 struct Welcome {
     sync::PeerId peerId = 0;
@@ -72,6 +79,7 @@ inline constexpr std::size_t kChunkTargetBytes = 192 * 1024;  // well under the 
 inline constexpr std::size_t kMaxChunkEntries = 200'000;
 
 std::vector<std::uint8_t> encode(const Hello& m);
+std::vector<std::uint8_t> encode(const Secure& m);
 std::vector<std::uint8_t> encode(const Welcome& m);
 std::vector<std::uint8_t> encode(const SnapshotEnd& m);
 std::vector<std::uint8_t> encode(const Refuse& m);
@@ -82,6 +90,7 @@ std::vector<std::uint8_t> encodeOpMsg(const sync::Op& op);  // Submit and Sequen
 std::vector<std::vector<std::uint8_t>> encodeSnapshotChunks(const sync::Replica& state);
 
 std::optional<Hello> decodeHello(std::span<const std::uint8_t> p);
+std::optional<Secure> decodeSecure(std::span<const std::uint8_t> p);
 std::optional<Welcome> decodeWelcome(std::span<const std::uint8_t> p);
 std::optional<SnapshotChunk> decodeSnapshotChunk(std::span<const std::uint8_t> p);
 std::optional<SnapshotEnd> decodeSnapshotEnd(std::span<const std::uint8_t> p);
