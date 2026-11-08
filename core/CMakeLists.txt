@@ -34,6 +34,7 @@ add_library(nexlevel_core STATIC
     src/bytes.cpp
     src/frame.cpp
     src/net/loopback_probe.cpp
+    src/sync/object_props.cpp
 )
 target_include_directories(nexlevel_core PRIVATE ${NEXLEVEL_ASIO_INCLUDE})
 target_compile_definitions(nexlevel_core PRIVATE ASIO_STANDALONE ASIO_NO_DEPRECATED)

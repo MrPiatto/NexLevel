@@ -2,6 +2,7 @@
 #include <nexlevel/core/bytes.hpp>
 #include <nexlevel/core/frame.hpp>
 #include <nexlevel/core/net/loopback_probe.hpp>
+#include <nexlevel/core/sync/object_props.hpp>
 #include <nexlevel/core/version.hpp>
 
 #include <cstdio>
@@ -103,6 +104,35 @@ static void testSessionCompatibility() {
     CHECK(!canShareSession(GameTarget::Unknown, GameTarget::Unknown));
 }
 
+static void testParseSaveString() {
+    auto p = sync::parseSaveString("1,1,2,15,3,105;");
+    CHECK(p && p->size() == 3 && p->at(1) == "1" && p->at(2) == "15" && p->at(3) == "105");
+    auto groups = sync::parseSaveString("1,914,57,1.2.3,31,SGVsbG8=");  // groups use '.', text is base64
+    CHECK(groups && groups->at(57) == "1.2.3" && groups->at(31) == "SGVsbG8=");
+    auto empty = sync::parseSaveString("");
+    CHECK(empty && empty->empty());
+    auto emptyVal = sync::parseSaveString("1,1,21,");
+    CHECK(emptyVal && emptyVal->at(21).empty());
+    CHECK(!sync::parseSaveString("1,1,2"));        // key without value
+    CHECK(!sync::parseSaveString("1,1,x,2"));      // non-numeric key
+    CHECK(!sync::parseSaveString("1,1,1,2"));      // duplicate key
+    auto rt = sync::parseSaveString(sync::toSaveString(*p));
+    CHECK(rt && *rt == *p);
+}
+
+static void testDiffProps() {
+    auto before = *sync::parseSaveString("1,1,2,15,3,105,21,3");
+    auto after = *sync::parseSaveString("1,1,2,45,3,105,6,90");   // moved x, rotated, dropped color
+    auto d = sync::diffProps(before, after);
+    CHECK(d.changed.size() == 2 && d.changed[0].first == 2 && d.changed[0].second == "45" && d.changed[1].first == 6);
+    CHECK(d.removed.size() == 1 && d.removed[0] == 21);
+    CHECK(sync::describe(d) == "2=45 6=90 -21");
+    auto patched = before;
+    sync::applyDiff(patched, d);
+    CHECK(patched == after);
+    CHECK(sync::diffProps(after, after).empty());
+}
+
 static void testLoopbackProbe() {
     auto r = net::runLoopbackProbe();
     if (!r.ok) std::printf("  probe error: %s\n", r.error.c_str());
@@ -122,6 +152,8 @@ int main() {
     testFrameBadMagic();
     testFrameTooLarge();
     testSessionCompatibility();
+    testParseSaveString();
+    testDiffProps();
     testLoopbackProbe();
     std::printf("%d checks, %d failed\n", g_checks, g_failed);
     return g_failed == 0 ? 0 : 1;
