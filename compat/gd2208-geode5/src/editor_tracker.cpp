@@ -58,7 +58,16 @@ public:
         }
         m_cache.erase(o);
         m_dirty.erase(o);
+        m_pendingRemoval.erase(o);
     }
+
+    // Deletion through EditorUI::deleteObject is inline on Windows and skips LevelEditorLayer::removeObject,
+    // so removals are confirmed at end of frame: a candidate that is no longer in the layer's object list
+    // was removed; one that is still there only changed section (or the delete was cancelled).
+    void maybeRemoved(GameObject* o) {
+        if (o && !m_paused && m_armed) m_pendingRemoval.insert(o);
+    }
+    void cancelRemoval(GameObject* o) { m_pendingRemoval.erase(o); }
 
     // Re-read every cached object without logging (after playtest, GD restores object state).
     void resyncSilently() {
@@ -82,6 +91,7 @@ public:
                     m_dirty.insert(o);
                 }
             }
+            reconcileRemovals();
             std::size_t changedLogged = 0, changedTotal = 0;
             for (auto* o : m_dirty) {
                 auto it = m_cache.find(o);
@@ -105,6 +115,19 @@ public:
     }
 
 private:
+    void reconcileRemovals() {
+        if (m_pendingRemoval.empty()) return;
+        std::unordered_set<GameObject*> inLevel;
+        if (m_layer->m_objects) {
+            for (auto* o : CCArrayExt<GameObject*>(m_layer->m_objects)) inLevel.insert(o);
+        }
+        auto pending = std::move(m_pendingRemoval);
+        m_pendingRemoval.clear();
+        for (auto* o : pending) {
+            if (!inLevel.contains(o)) onRemoved(o);
+        }
+    }
+
     static void flushSummary(const char* kind, std::size_t total) {
         if (total > kMaxLogLinesPerKind) {
             log::info("NexLevel diff: ... {} more {} this frame", total - kMaxLogLinesPerKind, kind);
@@ -124,6 +147,7 @@ private:
     LevelEditorLayer* m_layer;
     std::unordered_map<GameObject*, nls::PropMap> m_cache;  // objects touched this editor session
     std::unordered_set<GameObject*> m_dirty;
+    std::unordered_set<GameObject*> m_pendingRemoval;
     std::size_t m_createdLogged = 0, m_removedLogged = 0;
     bool m_paused = false;
     bool m_armed = false;
@@ -167,6 +191,11 @@ class $modify(NLEditorUI, EditorUI) {
 
     void nlTick(float) {
         if (g_tracker) g_tracker->tick(this->getSelectedObjects());
+    }
+
+    void onDeleteSelected(CCObject* sender) {
+        if (g_tracker) forEachObject(this->getSelectedObjects(), [](GameObject* o) { g_tracker->maybeRemoved(o); });
+        EditorUI::onDeleteSelected(sender);
     }
 
     void moveObject(GameObject* object, CCPoint offset) {
@@ -251,7 +280,15 @@ class $modify(NLGJBaseGameLayer, GJBaseGameLayer) {
     void addToSection(GameObject* object) {
         GJBaseGameLayer::addToSection(object);
         if (g_tracker && static_cast<GJBaseGameLayer*>(g_tracker->layer()) == this && !isUnderEditorUI(object)) {
+            g_tracker->cancelRemoval(object);
             g_tracker->onCreated(object, "addToSection");
         }
+    }
+
+    void removeObjectFromSection(GameObject* object) {
+        if (g_tracker && static_cast<GJBaseGameLayer*>(g_tracker->layer()) == this) {
+            g_tracker->maybeRemoved(object);
+        }
+        GJBaseGameLayer::removeObjectFromSection(object);
     }
 };
