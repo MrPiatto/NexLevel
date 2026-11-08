@@ -3,6 +3,7 @@
 // Windows-inline (not hookable): EditorUI::deleteObject, LevelEditorLayer::undoLastAction/redoLastAction,
 // so deletion is caught at LevelEditorLayer::removeObject and undo/redo at LevelEditorLayer::handleAction.
 #include <Geode/Geode.hpp>
+#include <Geode/modify/CustomizeObjectLayer.hpp>
 #include <Geode/modify/EditorUI.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/LevelEditorLayer.hpp>
@@ -77,7 +78,7 @@ public:
 
     LevelEditorLayer* layer() const { return m_layer; }
 
-    void tick(CCArray* selected) {
+    void tick(CCArray* selected, GameObject* single) {
         // Armed on the first frame, so objects added while the level loads are not reported.
         if (!m_armed) {
             m_armed = true;
@@ -90,6 +91,11 @@ public:
                     snapshotIfUnknown(o);
                     m_dirty.insert(o);
                 }
+            }
+            // A single selection lives in EditorUI::m_selectedObject, not in the selection array.
+            if (single) {
+                snapshotIfUnknown(single);
+                m_dirty.insert(single);
             }
             reconcileRemovals();
             std::size_t changedLogged = 0, changedTotal = 0;
@@ -190,7 +196,7 @@ class $modify(NLEditorUI, EditorUI) {
     }
 
     void nlTick(float) {
-        if (g_tracker) g_tracker->tick(this->getSelectedObjects());
+        if (g_tracker) g_tracker->tick(this->getSelectedObjects(), m_selectedObject);
     }
 
     void onDeleteSelected(CCObject* sender) {
@@ -290,5 +296,34 @@ class $modify(NLGJBaseGameLayer, GJBaseGameLayer) {
             g_tracker->maybeRemoved(object);
         }
         GJBaseGameLayer::removeObjectFromSection(object);
+    }
+};
+
+// Edit Object popup (colours, HSV, channels). Snapshot targets when it opens, diff them when it closes.
+class $modify(NLCustomizeObjectLayer, CustomizeObjectLayer) {
+    static void forTargets(GameObject* single, CCArray* many, bool snapshot) {
+        if (!g_tracker) return;
+        auto visit = [snapshot](GameObject* o) {
+            if (snapshot) g_tracker->snapshotIfUnknown(o);
+            else g_tracker->markDirty(o);
+        };
+        if (single) visit(single);
+        forEachObject(many, visit);
+    }
+
+    bool init(GameObject* object, CCArray* objects) {
+        if (!CustomizeObjectLayer::init(object, objects)) return false;
+        forTargets(m_targetObject, m_targetObjects, true);
+        return true;
+    }
+
+    void onClose(CCObject* sender) {
+        forTargets(m_targetObject, m_targetObjects, false);
+        CustomizeObjectLayer::onClose(sender);
+    }
+
+    void keyBackClicked() {
+        forTargets(m_targetObject, m_targetObjects, false);
+        CustomizeObjectLayer::keyBackClicked();
     }
 };
