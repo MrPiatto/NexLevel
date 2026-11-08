@@ -38,14 +38,17 @@ if ($steam) {
   $libs = @("$steam")
   $vdf = Join-Path $steam 'steamapps\libraryfolders.vdf'
   if (Test-Path $vdf) { Select-String -Path $vdf -Pattern '"path"\s+"(.+)"' | ForEach-Object { $libs += ($_.Matches[0].Groups[1].Value -replace '\\\\','\') } }
+  $found = $false
   foreach ($l in ($libs | Select-Object -Unique)) {
     $gd = Join-Path $l 'steamapps\common\Geometry Dash'
     if (Test-Path "$gd\GeometryDash.exe") {
       $exe = Get-Item "$gd\GeometryDash.exe"
+      $found = $true
       $lines += "GD (Steam)       = $gd  (exe modified $($exe.LastWriteTime.ToString('s')))"
       if (Test-Path "$gd\Geode.dll") { $lines += "  Geode installed: yes (Geode.dll $((Get-Item "$gd\Geode.dll").VersionInfo.ProductVersion))" } else { $lines += "  Geode installed: no" }
     }
   }
+  if (-not $found) { $lines += "GD (Steam)       = not found in Steam libraries: $($libs -join '; ')" }
 } else { $lines += "Steam            = not found in registry" }
 
 $lines | Tee-Object -FilePath $out

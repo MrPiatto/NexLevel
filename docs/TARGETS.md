@@ -3,7 +3,7 @@
 | Target | GD | Geode SDK (pinned) | Compat module | C++ | Status |
 | --- | --- | --- | --- | --- | --- |
 | gd2207 | 2.2074 | v4.10.2 | compat/gd2207-geode4 | 20 | SDK cloned, GD version confirmed in SDK; binaries + first build pending |
-| gd2208 | 2.2081 | v5.10.1 | compat/gd2208-geode5 | 23 | SDK cloned, GD version confirmed in SDK; binaries + first build pending |
+| gd2208 | 2.2081 | v5.10.1 | compat/gd2208-geode5 | 23 | Windows build OK (2026-11-08); not yet tested in game |
 | gd2209 | 2.2091 | v6.0.0-alpha.1 | compat/gd2209-geode6 | 23 | SDK cloned, GD version confirmed in SDK; binaries + first build pending |
 
 Rules
