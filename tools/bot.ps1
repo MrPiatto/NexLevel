@@ -16,4 +16,5 @@ if ($BotArgs.Count -eq 1 -and $BotArgs[0] -eq 'join') {
     Write-Host "Using room code from clipboard: $code"
     $BotArgs = @('join', $code)
 }
-& (Join-Path $bld 'Debug/nexlevel_bot.exe') @BotArgs
+# Output is also saved to build/core-tests-win/bot-last-run.txt.
+& (Join-Path $bld 'Debug/nexlevel_bot.exe') @BotArgs 2>&1 | Tee-Object -FilePath (Join-Path $bld 'bot-last-run.txt')

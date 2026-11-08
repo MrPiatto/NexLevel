@@ -105,7 +105,19 @@ class NetThread {
 public:
     NetThread() : m_guard(asio::make_work_guard(m_io)) {}
     ~NetThread() { stop(); }
-    void start() { m_thread = std::thread([this] { m_io.run(); }); }
+    void start() {
+        m_thread = std::thread([this] {
+            // A throwing handler must never take the game down (std::terminate on this thread):
+            // drop that handler and keep the loop running.
+            while (true) {
+                try {
+                    m_io.run();
+                    return;
+                } catch (...) {
+                }
+            }
+        });
+    }
     void stop() {
         if (m_stopped) return;
         m_stopped = true;

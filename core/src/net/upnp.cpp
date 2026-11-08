@@ -12,7 +12,6 @@
 #include <functional>
 #include <map>
 #include <mutex>
-#include <regex>
 #include <thread>
 #include <vector>
 
@@ -212,11 +211,31 @@ std::string xmlUnescape(std::string s) {
     return s;
 }
 
+// Text of the first <name> or <prefix:name> element (no regex: std::regex recursion can overflow
+// the stack on large router descriptions).
 std::optional<std::string> tagValue(const std::string& xml, const std::string& name) {
-    std::regex re("<(?:[A-Za-z0-9_.-]+:)?" + name + R"((?:\s[^>]*)?>\s*([^<]*?)\s*<)");
-    std::smatch m;
-    if (!std::regex_search(xml, m, re)) return std::nullopt;
-    return xmlUnescape(m[1].str());
+    std::size_t pos = 0;
+    while ((pos = xml.find('<', pos)) != std::string::npos) {
+        ++pos;
+        if (pos >= xml.size() || xml[pos] == '/' || xml[pos] == '?' || xml[pos] == '!') continue;
+        auto nameEnd = xml.find_first_of(" \t\r\n/>", pos);
+        if (nameEnd == std::string::npos) return std::nullopt;
+        std::string tag = xml.substr(pos, nameEnd - pos);
+        auto colon = tag.find(':');
+        if (colon != std::string::npos) tag = tag.substr(colon + 1);
+        if (tag != name) continue;
+        auto open = xml.find('>', nameEnd);
+        if (open == std::string::npos) return std::nullopt;
+        if (xml[open - 1] == '/') return std::string();  // <tag/>
+        auto close = xml.find('<', open + 1);
+        if (close == std::string::npos) return std::nullopt;
+        std::string text = xml.substr(open + 1, close - open - 1);
+        const auto first = text.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) return std::string();
+        const auto last = text.find_last_not_of(" \t\r\n");
+        return xmlUnescape(text.substr(first, last - first + 1));
+    }
+    return std::nullopt;
 }
 
 // ---- IGD ----

@@ -292,10 +292,12 @@ public:
                 m_deferred.insert(id);
                 continue;
             }
+            log::debug("NexLevel trace: replace {} (obj id {})", id.value, obj->m_objectID);
             unmap(obj);
             forget(obj);
             m_layer->removeObject(obj, true);
             spawn(id, state->props);
+            log::debug("NexLevel trace: replaced {}", id.value);
         }
     }
 
@@ -316,6 +318,7 @@ private:
 
     void spawn(nls::NetId id, const nls::PropMap& props) {
         auto str = nls::toSaveString(props) + ";";
+        log::debug("NexLevel trace: spawn {}: {}", id.value, str.substr(0, 120));
         auto* objs = m_layer->createObjectsFromString(str, true, true);
         if (!objs || objs->count() == 0) {
             log::warn("NexLevel: could not create object for net id {}", id.value);

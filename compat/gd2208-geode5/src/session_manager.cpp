@@ -14,7 +14,13 @@ using namespace geode::prelude;
 namespace nexlevel::mod {
 
 void notify(const std::string& text, NotificationIcon icon) {
-    Notification::create(text, icon)->show();
+    log::info("NexLevel notice: {}", text);
+    // Shown on the next frame, and only if there is a scene: notices can be triggered while
+    // cocos2d tears the editor down (e.g. quitting the game), where showing one crashes.
+    geode::queueInMainThread([text, icon] {
+        if (!CCDirector::sharedDirector()->getRunningScene()) return;
+        Notification::create(text, icon)->show();
+    });
 }
 
 namespace {
