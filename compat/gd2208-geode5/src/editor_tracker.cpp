@@ -78,13 +78,6 @@ public:
 
     LevelEditorLayer* layer() const { return m_layer; }
 
-    // TEMP diagnostics for the Edit Object colour investigation.
-    void debugDump(const char* when, GameObject* o) {
-        if (!o) { log::info("NexLevel debug [{}]: target is null", when); return; }
-        auto cached = m_cache.find(o);
-        log::info("NexLevel debug [{}]: uid={} id={} cached={} now='{}'", when, o->m_uniqueID, o->m_objectID,
-            cached != m_cache.end(), std::string(o->getSaveString(m_layer)));
-    }
 
     void tick(CCArray* selected, GameObject* single) {
         // Armed on the first frame, so objects added while the level loads are not reported.
@@ -321,21 +314,16 @@ class $modify(NLCustomizeObjectLayer, CustomizeObjectLayer) {
 
     bool init(GameObject* object, CCArray* objects) {
         if (!CustomizeObjectLayer::init(object, objects)) return false;
-        log::info("NexLevel debug: Edit Object opened, single={}, many={}", m_targetObject != nullptr,
-            m_targetObjects ? m_targetObjects->count() : 0);
-        if (g_tracker) g_tracker->debugDump("open", m_targetObject);
         forTargets(m_targetObject, m_targetObjects, true);
         return true;
     }
 
     void onClose(CCObject* sender) {
-        if (g_tracker) g_tracker->debugDump("close", m_targetObject);
         forTargets(m_targetObject, m_targetObjects, false);
         CustomizeObjectLayer::onClose(sender);
     }
 
     void keyBackClicked() {
-        if (g_tracker) g_tracker->debugDump("back", m_targetObject);
         forTargets(m_targetObject, m_targetObjects, false);
         CustomizeObjectLayer::keyBackClicked();
     }
