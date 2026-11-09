@@ -1,3 +1,8 @@
+# v1.0.4
+- New mod page: how to host and join, all features, and a "Privacy and online connections" section that explains exactly what other players and the relay can see (no data is collected).
+- Node IDs (with the mod prefix) for the hosting badge, the editor ping label and the players overlay (better compatibility with other mods).
+- Works with rooms of v1.0.3 (same protocol).
+
 # v1.0.3
 - Much faster joins on big levels: the level is sent compressed (about 7 times less data), so joining through the relay or on mobile data takes a fraction of the time.
 - Joining from the main menu now waits until the whole level has arrived, then opens it with Geometry Dash's own level loader (the fastest way to load a level).
