@@ -1,6 +1,7 @@
 # v1.0.1
 - Fixed a crash (heap corruption) when another player's change arrived while you were building, especially with Shift held (continuous building), swiping or dragging. Their changes now apply as soon as you let go, and what you build during the gesture is sent in one go when you release.
 - Fixed a crash when another player deleted an object you had selected.
+- Hardening against crashes: NexLevel now keeps its own reference to every object it tracks (no stale pointers, whatever way GD deletes objects), skips objects GD cannot build, and only shows game modes and icons that exist in your game when watching playtests.
 - Other players' view is now shown as an outline only (no tint over the level).
 
 # v1.0.0 - first release

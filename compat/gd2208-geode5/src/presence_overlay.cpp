@@ -6,6 +6,7 @@
 #include "session_manager.hpp"
 #include "ui_common.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <map>
@@ -104,8 +105,13 @@ public:
                     if (icon) icon->setVisible(false);
                     return;
                 }
+                // Data from another player: only game modes and icon ids this game actually has
+                // (an unknown IconType or an icon past the last one has no texture to load).
+                newMode = std::clamp(newMode, 0, 7);  // cube .. swing
+                const int maxIcon = std::max(1, GameManager::get()->countForType(static_cast<IconType>(newMode)));
+                newIcon = std::clamp(newIcon, 1, maxIcon);
                 if (!icon) {
-                    icon = SimplePlayer::create(newIcon);
+                    icon = SimplePlayer::create(std::clamp(newIcon, 1, std::max(1, GameManager::get()->countForType(IconType::Cube))));
                     if (!icon) return;
                     m_trailLayer->addChild(icon, 1);
                 }

@@ -65,6 +65,7 @@ bool editorBusy(EditorUI* ui) {
 class EditorTracker : public nexlevel::mod::IEditorBridge {
 public:
     explicit EditorTracker(LevelEditorLayer* layer) : m_layer(layer) {}
+    ~EditorTracker() override { dropAll(); }
 
     void setPaused(bool paused) { m_paused = paused; }
 
@@ -140,7 +141,7 @@ public:
 
     void snapshotIfUnknown(GameObject* o) {
         if (!o || ignoring() || m_cache.contains(o)) return;
-        m_cache.emplace(o, read(o));
+        cachePut(o, read(o));
     }
     void markDirty(GameObject* o) {
         if (o && !ignoring()) m_dirty.insert(o);
@@ -164,7 +165,7 @@ public:
             log::debug("NexLevel diff: created uid={} id={} ({} props, via {})", o->m_uniqueID, o->m_objectID, props.size(), via);
         }
         publishCreate(o, props);
-        m_cache[o] = std::move(props);
+        cachePut(o, std::move(props));
         m_dirty.erase(o);
     }
 
@@ -368,7 +369,7 @@ public:
             if (!id || props.empty()) return;
             map(o, *id);
             sm->submitLocal(nls::Op::create(*id, props));
-            m_cache[o] = std::move(props);
+            cachePut(o, std::move(props));
             ++n;
         });
         log::info("NexLevel: published {} existing objects to the room", n);
@@ -388,9 +389,7 @@ public:
         // Old undo/redo entries point at objects that are no longer part of the shared level.
         if (m_layer->m_undoObjects) m_layer->m_undoObjects->removeAllObjects();
         if (m_layer->m_redoObjects) m_layer->m_redoObjects->removeAllObjects();
-        m_cache.clear();
-        m_objToId.clear();
-        m_idToObj.clear();
+        dropAll();
         m_dirty.clear();
         m_pendingRemoval.clear();
         m_deferred.clear();
@@ -423,10 +422,10 @@ public:
             if (!state) {
                 if (obj) {
                     log::debug("NexLevel trace: delete {} (obj id {})", id.value, obj->m_objectID);
+                    releaseFromEditor(obj);
+                    m_layer->removeObject(obj, true);  // our references keep it alive until unmap/forget
                     unmap(obj);
                     forget(obj);
-                    releaseFromEditor(obj);
-                    m_layer->removeObject(obj, true);
                 }
                 continue;
             }
@@ -441,10 +440,10 @@ public:
                 continue;
             }
             log::debug("NexLevel trace: replace {} (obj id {})", id.value, obj->m_objectID);
-            unmap(obj);
-            forget(obj);
             releaseFromEditor(obj);
             m_layer->removeObject(obj, true);
+            unmap(obj);
+            forget(obj);
             spawn(id, state->props);
             log::debug("NexLevel trace: replaced {}", id.value);
         }
@@ -465,7 +464,20 @@ private:
         }
     }
 
+    // Objects from the network must be something GD can build: a known object id (key 1).
+    static bool spawnable(const nls::PropMap& props) {
+        auto it = props.find(1);
+        if (it == props.end()) return false;
+        int objectId = 0;
+        try { objectId = std::stoi(it->second); } catch (...) { return false; }
+        return objectId > 0 && objectId < 10000;
+    }
+
     void spawn(nls::NetId id, const nls::PropMap& props) {
+        if (!spawnable(props)) {
+            log::warn("NexLevel: skipped an object that GD cannot create (net id {})", id.value);
+            return;
+        }
         auto str = nls::toSaveString(props) + ";";
         log::debug("NexLevel trace: spawn {}: {}", id.value, str.substr(0, 120));
         auto* objs = m_layer->createObjectsFromString(str, true, true);
@@ -475,7 +487,7 @@ private:
         }
         auto* o = static_cast<GameObject*>(objs->objectAtIndex(0));
         map(o, id);
-        m_cache[o] = read(o);
+        cachePut(o, read(o));
     }
 
     // Whole level at once (join / rebuild): one createObjectsFromString call per batch is far
@@ -484,7 +496,7 @@ private:
     void spawnMany(const nls::Replica& view) {
         std::vector<std::pair<nls::NetId, const nls::PropMap*>> todo;
         for (const auto& [id, state] : view.objects()) {
-            if (!nls::isLevelSettings(id)) todo.emplace_back(id, &state.props);
+            if (!nls::isLevelSettings(id) && spawnable(state.props)) todo.emplace_back(id, &state.props);
         }
         constexpr std::size_t kBatch = 2000;
         for (std::size_t start = 0; start < todo.size(); start += kBatch) {
@@ -496,7 +508,7 @@ private:
                 for (std::size_t i = start; i < end; ++i) {
                     auto* o = static_cast<GameObject*>(objs->objectAtIndex(static_cast<unsigned>(i - start)));
                     map(o, todo[i].first);
-                    m_cache[o] = read(o);
+                    cachePut(o, read(o));
                 }
                 continue;
             }
@@ -545,9 +557,31 @@ private:
         send(nls::Op::setProps(it->second, d));
     }
 
+    // Every object NexLevel tracks is retained (cache and id maps hold one reference each), so no
+    // pointer we keep can ever point at freed memory, whatever path GD uses to delete objects.
+    void cachePut(GameObject* o, nls::PropMap props) {
+        auto [it, inserted] = m_cache.try_emplace(o);
+        if (inserted) o->retain();
+        it->second = std::move(props);
+    }
     void map(GameObject* o, nls::NetId id) {
-        m_objToId[o] = id;
+        if (auto old = m_idToObj.find(id); old != m_idToObj.end() && old->second != o) unmap(old->second);
+        if (auto prev = m_objToId.find(o); prev != m_objToId.end()) {
+            if (prev->second == id) return;
+            m_idToObj.erase(prev->second);
+            prev->second = id;
+        } else {
+            m_objToId.emplace(o, id);
+            o->retain();
+        }
         m_idToObj[id] = o;
+    }
+    void dropAll() {
+        for (auto& [o, _] : m_objToId) o->release();
+        for (auto& [o, _] : m_cache) o->release();
+        m_objToId.clear();
+        m_idToObj.clear();
+        m_cache.clear();
     }
     // The editor UI keeps raw pointers to the selection: an object removed by a remote change must
     // leave the selection first, or the next frame touches a freed object.
@@ -555,16 +589,21 @@ private:
         if (!o || !o->m_isSelected) return;
         if (auto* ui = EditorUI::get()) ui->deselectObject(o);
     }
+    // unmap/forget may drop the last reference: callers must not use `o` afterwards except as a key.
     void unmap(GameObject* o) {
         if (auto it = m_objToId.find(o); it != m_objToId.end()) {
             m_idToObj.erase(it->second);
             m_objToId.erase(it);
+            o->release();
         }
     }
     void forget(GameObject* o) {
-        m_cache.erase(o);
         m_dirty.erase(o);
         m_pendingRemoval.erase(o);
+        if (auto it = m_cache.find(o); it != m_cache.end()) {
+            m_cache.erase(it);
+            o->release();
+        }
     }
 
     void reconcileRemovals() {
