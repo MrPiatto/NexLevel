@@ -1,232 +1,231 @@
-# NexLevel: come funziona il codice
+# NexLevel: how the code works
 
-Guida per capire tutto il progetto, dal livello più alto ai dettagli. Ogni sezione dice **cosa fa**
-una parte, **perché** è fatta così e **dove** si trova.
-
----
-
-## 1. L'idea in una frase
-
-Un giocatore (l'**host**) apre una **stanza** dal suo editor. Gli altri (i **client**) entrano con un
-codice. Ogni modifica a un oggetto diventa una **operazione** (op): l'host le mette in un **ordine
-unico** e le rimanda a tutti, così ogni editor applica le stesse modifiche nello stesso ordine e il
-livello resta identico per tutti.
+A guide to the whole project, from the big picture down to the details. Each section says **what** a
+part does, **why** it is built that way and **where** it lives.
 
 ---
 
-## 2. Struttura delle cartelle
+## 1. The idea in one sentence
 
-| Cartella | Cosa contiene |
+One player (the **host**) opens a **room** from their editor. The others (the **clients**) join with a
+code. Every change to an object becomes an **operation** (op): the host puts all ops in **one global
+order** and sends them back to everyone, so every editor applies the same changes in the same order
+and the level stays identical for all players.
+
+---
+
+## 2. Folder layout
+
+| Folder | Contents |
 |---|---|
-| `core/` | Il "motore": rete, sincronizzazione, cifratura, relay. **Non conosce Geometry Dash**: è C++20 puro, si compila e si testa da solo. |
-| `compat/gd2208-geode5/` | La mod vera e propria per GD 2.2081 con Geode v5: hook dell'editor, interfaccia, salvataggi. Usa il core. |
-| `deploy/relay/` | Script per installare il server relay su un VPS (Docker, servizio systemd). |
-| `tools/` | Script PowerShell: build, test, bot di prova, upload del relay. |
-| `docs/` | Guide (online, relay, piano di test). |
+| `core/` | The engine: networking, sync, encryption, relay. **It knows nothing about Geometry Dash**: plain C++20, built and tested on its own. |
+| `compat/gd2208-geode5/` | The actual mod for GD 2.2081 / Geode v5: editor hooks, UI, saving. Uses the core. |
+| `compat/gd2209-geode6/` | Placeholder for the future GD 2.209 port. |
+| `deploy/relay/` | Scripts to install the relay server on a VPS (Docker, systemd service). |
+| `tools/` | PowerShell scripts: build, tests, test bot, relay upload. |
+| `docs/` | Guides (online play, relay, test plan, this file). |
 
-**Perché il core è separato:** si può testare senza aprire il gioco (347 controlli automatici) e,
-quando uscirà una nuova versione di GD, basta riscrivere solo la parte in `compat/`.
-
----
-
-## 3. Il modello dei dati (core/sync)
-
-- **NetId** (`netid.hpp`): l'identificativo di un oggetto nella stanza, valido per tutti. È un
-  numero a 64 bit = *id del giocatore* + *contatore*. Ognuno crea id nel proprio spazio, quindi due
-  giocatori non creano mai lo stesso id.
-- **PropMap** (`object_props.hpp`): un oggetto di GD è una mappa *chiave → valore*, la stessa che GD
-  usa nei livelli salvati (`1,1,2,15,3,45` = oggetto 1, x=15, y=45). `parseSaveString` e
-  `toSaveString` convertono tra testo e mappa; `diffProps` trova cosa è cambiato.
-- **Op** (`op.hpp`): tre tipi di operazione: **Create** (nuovo oggetto con le sue proprietà),
-  **SetProps** (solo le proprietà cambiate), **Delete**.
-- **Replica** (`replica.hpp`): lo stato del livello = tutti gli oggetti + le "lapidi" (tombstones)
-  degli oggetti cancellati. Regole: una Create su un id esistente o cancellato viene ignorata, una
-  SetProps su un oggetto che non esiste viene ignorata. Così applicare le stesse op nello stesso
-  ordine dà sempre lo stesso risultato (determinismo).
-- **HostSequencer** (`host_sequencer.hpp`): sull'host assegna a ogni op un **numero di sequenza**
-  globale. È l'"arbitro" dell'ordine.
-- **ClientReplica** (`client_replica.hpp`): sul client tiene due cose: lo stato **confermato**
-  dall'host e le op locali **ancora in attesa** di conferma. La vista mostrata = confermato + in
-  attesa. Quando arriva la conferma, l'op passa da "in attesa" a "confermata". Così il giocatore vede
-  subito le sue modifiche senza aspettare la rete (*optimistic update*).
-- **Impostazioni del livello** (`level_settings.hpp`): colori, sfondo, suolo, canzone ecc. viaggiano
-  come **un oggetto speciale** con un id riservato (`kLevelSettingsId`), così usano lo stesso
-  meccanismo degli oggetti. Ogni impostazione è una proprietà separata, quindi due persone che
-  cambiano impostazioni diverse non si sovrascrivono.
-- **Level string** (`level_string.hpp`): costruisce il testo di un livello GD (`intestazione;oggetto;
-  oggetto;...`) partendo dalla Replica. Serve per salvare la stanza e per aprirla con il caricatore
-  di GD.
+**Why the core is separate:** it can be tested without opening the game (358 automated checks), and
+when a new GD version comes out only the `compat/` part has to be rewritten.
 
 ---
 
-## 4. La rete (core/net, core/frame, core/session)
+## 3. Data model (core/sync)
 
-- **Asio** (libreria standalone) gestisce i socket TCP su un **thread di rete** separato. Il gioco
-  non si blocca mai aspettando la rete.
-- **Frame** (`frame.hpp`): ogni messaggio sulla connessione è un *frame* = intestazione (magic,
-  versione del protocollo, tipo, lunghezza) + contenuto. `FrameDecoder` ricompone i frame da byte
-  che arrivano a pezzi e rifiuta quelli troppo grandi o malformati.
-- **Messaggi** (`session/messages.hpp`): Hello (chi sono), Welcome (il tuo id), SnapshotChunk/End
-  (il livello quando entri), Submit (op del client), Sequenced (op ordinata dall'host), Roster
-  (lista giocatori), Ping/Pong, Presence, PlayerState, ecc. Ogni messaggio ha `encode`/`decode` con
-  controlli di validità: un messaggio corrotto viene rifiutato, mai eseguito.
-- **ByteWriter/ByteReader** (`bytes.hpp`): scrivono e leggono numeri little-endian e stringhe con
-  controllo dei limiti: leggere oltre la fine non crasha, segna l'errore.
-- **Versione del protocollo** (`version.hpp`, ora **v8**): se host e client hanno versioni diverse, la
-  connessione viene rifiutata con un messaggio chiaro.
+- **NetId** (`netid.hpp`): the room-wide id of an object. A 64-bit number = *player id* + *counter*.
+  Each player creates ids in their own range, so two players never create the same id. The player
+  part also tells who placed an object ("Placed by").
+- **PropMap** (`object_props.hpp`): a GD object is a *key → value* map, the same format GD uses in
+  saved levels (`1,1,2,15,3,45` = object 1, x=15, y=45). `parseSaveString` / `toSaveString` convert
+  between text and map; `diffProps` finds what changed.
+- **Op** (`op.hpp`): three kinds: **Create** (new object with its properties), **SetProps** (only the
+  changed properties), **Delete**.
+- **Replica** (`replica.hpp`): the level state = all objects + "tombstones" of deleted objects. Rules:
+  a Create on an existing or deleted id is ignored, a SetProps on a missing object is ignored. So
+  applying the same ops in the same order always gives the same result (determinism).
+- **HostSequencer** (`host_sequencer.hpp`): on the host, gives every op a global **sequence number**.
+  It is the referee of the order.
+- **ClientReplica** (`client_replica.hpp`): on a client, keeps the state **confirmed** by the host
+  plus the local ops **still waiting** for confirmation. What is shown = confirmed + pending. When the
+  confirmation arrives the op moves from pending to confirmed; if the host rejects it, it is dropped
+  and the object goes back to the confirmed state. Players see their own edits immediately without
+  waiting for the network (*optimistic update*).
+- **Level settings** (`level_settings.hpp`): colours, background, ground, song, etc. travel as **one
+  special object** with a reserved id (`kLevelSettingsId`), so they use the same mechanism as objects.
+  Each setting is a separate property, so two people changing different settings never overwrite
+  each other.
+- **Level string** (`level_string.hpp`): builds a GD level string (`header;object;object;...`) from a
+  Replica. Used to save the room and to open it with GD's own loader.
+
+---
+
+## 4. Networking (core/net, core/frame, core/session)
+
+- **Asio** (standalone) runs the TCP sockets on a separate **network thread**. The game never blocks
+  waiting for the network.
+- **Frame** (`frame.hpp`): every message on a connection is a frame = header (magic, protocol
+  version, type, length) + payload. `FrameDecoder` rebuilds frames from bytes arriving in pieces and
+  refuses oversized or malformed ones.
+- **Messages** (`session/messages.hpp`): Hello (who I am), Welcome (your id), SnapshotChunk(Z)/End
+  (the level when you join), Submit (a client op), Sequenced (an op ordered by the host), Roster
+  (player list), Ping/Pong, Presence, PlayerState, Chat, etc. Each message has `encode`/`decode` with
+  validity checks: a corrupted message is refused, never executed.
+- **ByteWriter/ByteReader** (`bytes.hpp`): bounds-checked little-endian numbers and strings: reading
+  past the end does not crash, it marks an error.
+- **Protocol version** (`version.hpp`, currently **v8**): if host and client differ, the connection is
+  refused with a clear message.
 
 ### Host (`session/host.cpp`)
-1. Apre una porta TCP (47777) e accetta connessioni.
-2. Al Hello controlla versione di GD, codice della stanza e numero di giocatori.
-3. Manda Welcome + **snapshot** del livello + SnapshotEnd, poi tutte le op nuove in ordine.
-4. Ogni op ricevuta (Submit) passa dal sequencer e viene rimandata a tutti (Sequenced).
-5. **Limiti anti-abuso**: un *token bucket* limita quante op al secondo può mandare un client, i
-   Ping hanno un tetto al secondo.
+1. Opens a TCP port (47777) and accepts connections.
+2. On Hello it checks GD version, room code and player count.
+3. Sends Welcome + a **snapshot** of the level + SnapshotEnd, then every new op in order.
+4. Every received op (Submit) goes through the sequencer and is sent to everyone (Sequenced).
+5. **Abuse limits**: a *token bucket* limits how many ops per second a client can send; pings and
+   chat lines are rate limited; view-only players' ops are rejected.
 
 ### Client (`session/client.cpp`)
-1. Prova a connettersi a **più destinazioni in parallelo** (diretta, rete locale, relay) e tiene la
-   prima che risponde.
-2. Riceve lo snapshot, poi applica le op in arrivo.
-3. Se la connessione cade, si **riconnette** da solo con un *resume token*: l'host sa quali op aveva
-   già ricevuto e non perde niente.
+1. Tries **several destinations in parallel** (direct, local network, relay) and keeps the first that
+   answers.
+2. Receives the snapshot, then applies incoming ops.
+3. If the connection drops, it **reconnects** on its own with a *resume token*: the host knows which
+   ops it already received, so nothing is lost.
 
-### Snapshot compresso (v1.0.3, `compress.hpp`)
-Quando qualcuno entra, il livello viene diviso in pezzi da 512 KB e ogni pezzo è **compresso** con
-un algoritmo LZ77 (formato LZ4): cerca sequenze di byte già viste e le sostituisce con "copia N byte
-da M posizioni indietro". I dati di GD sono ripetitivi, quindi si riducono circa 7 volte. Il
-decompressore controlla ogni lunghezza e posizione, così dati corrotti vengono rifiutati.
-
----
-
-## 5. Cifratura (core/crypto)
-
-- Libreria **Monocypher**.
-- Ogni lato genera una coppia di chiavi **X25519**. Si scambiano le chiavi pubbliche (Hello /
-  Secure) e calcolano lo stesso **segreto condiviso** (Diffie-Hellman).
-- Dal segreto si ricavano le chiavi con **BLAKE2b**.
-- Ogni messaggio successivo è cifrato con **XChaCha20-Poly1305**: cifratura + autenticazione (un
-  messaggio modificato viene scartato). Il *nonce* è un contatore implicito, quindi un messaggio
-  ripetuto o riordinato non viene accettato.
-- Risultato: il relay e chiunque nel mezzo vedono solo dati cifrati.
-- Numeri casuali dal sistema operativo: `BCryptGenRandom` su Windows, `getrandom` su Linux,
-  `arc4random_buf` su macOS.
+### Compressed snapshot (`compress.hpp`)
+When someone joins, the level is split into 512 KB chunks and each chunk is **compressed** with an
+LZ77 algorithm (LZ4 block format): it finds byte sequences already seen and replaces them with "copy
+N bytes from M positions back". GD data is very repetitive, so it shrinks about 7 times. The
+decompressor checks every length and offset, so corrupted data is refused.
 
 ---
 
-## 6. Come ci si collega senza IP (codici, UPnP, relay)
+## 5. Encryption (core/crypto)
 
-- **Codice della stanza** (`room_code.cpp`): impacchetta in poche lettere tutto ciò che serve per
-  trovare la stanza (indirizzo o stanza sul relay, porta, chiave, checksum). Tre formati: 13
-  caratteri (rete locale), 15 (internet diretto), **10 (relay)**. La checksum fa rifiutare i codici
-  scritti male.
-- **UPnP** (`net/upnp.cpp`): l'host chiede al router di aprire la porta in automatico (SSDP per
-  trovare il router, SOAP per chiedere l'apertura). Gestisce rinnovi, conflitti di porta e router
-  che non lo supportano. Non funziona dietro CGNAT (rete mobile), per questo serve il relay.
-- **Relay** (`relay/`, server EU-1 su AWS): un server pubblico che fa da ponte. L'host apre una
-  stanza sul relay e riceve un numero; il client si collega al relay con quel numero e il relay
-  inoltra i byte tra i due (cifrati, quindi il relay non li può leggere). Ha limiti per IP, timeout
-  e 90 secondi di tolleranza se l'host si disconnette un attimo.
-- **Più relay**: la mod misura il ping verso tutti i relay della lista (`probeRelays`) e usa il più
-  veloce. La lista può essere aggiornata da un URL senza aggiornare la mod.
+- Library: **Monocypher**.
+- Each side generates an **X25519** key pair. They exchange public keys (Hello / Secure) and compute
+  the same **shared secret** (Diffie-Hellman).
+- Keys are derived from the secret with **BLAKE2b**.
+- Every following message is encrypted with **XChaCha20-Poly1305**: encryption + authentication (a
+  modified message is discarded). The nonce is an implicit counter, so a replayed or reordered message
+  is not accepted.
+- Result: the relay and anyone in between only see encrypted data.
+- Random numbers come from the operating system: `BCryptGenRandom` on Windows, `getrandom` on Linux,
+  `arc4random_buf` on macOS.
 
 ---
 
-## 7. La mod in Geometry Dash (compat/gd2208-geode5/src)
+## 6. Connecting without IPs (codes, UPnP, relay)
 
-### `editor_tracker.cpp`: il cuore della sincronizzazione nell'editor
-- Usa gli **hook** di Geode (`$modify`) per intercettare le funzioni dell'editor: creazione,
-  cancellazione, spostamento, rotazione, scala, flip, undo/redo, playtest.
-- **Rilevare le modifiche locali**: per ogni oggetto tiene una copia delle proprietà (*cache*). Ogni
-  frame confronta gli oggetti toccati con la cache; se qualcosa cambia, manda una SetProps solo con
-  le differenze. Uno **sweep** controlla 100 oggetti per frame per trovare modifiche che nessun hook
-  ha visto (alcuni strumenti di GD cambiano gli oggetti per vie traverse).
-- **Applicare le modifiche degli altri** (`applyRemote`): crea, sostituisce o cancella gli oggetti
-  nell'editor. Mentre lo fa ignora i propri hook, per non rimandare indietro la stessa modifica.
-- **Sicurezza contro i crash**:
-  - ogni oggetto tracciato ha un `retain()`, così il puntatore non diventa mai invalido;
-  - mentre stai facendo un gesto (click/tocco premuto, swipe, **Shift**) o hai una finestra di
-    modifica aperta, le modifiche degli altri che tolgono o sostituiscono oggetti **aspettano**, e
-    le tue partono tutte insieme alla fine;
-  - un oggetto selezionato viene prima deselezionato e tolto dal gruppo collegato;
-  - l'uscita dei portali di teletrasporto (749) non è sincronizzata da sola: la gestisce GD insieme
-    all'entrata (747).
-- **Entrare nella stanza** (`adoptFromSession`): invece di cancellare e ricreare tutto, abbina gli
-  oggetti già presenti a quelli della stanza **per contenuto** (stessa stringa di proprietà) e crea o
-  toglie solo le differenze.
-- **Playtest visibile agli altri**: durante il playtest manda ~30 volte al secondo posizione,
-  modalità (cubo, nave...), icona e colore del giocatore (`PlayerState`).
+- **Room code** (`room_code.cpp`): packs everything needed to find the room (address or relay room,
+  port, key, checksum) into a few characters. Three formats: 13 characters (local network), 15
+  (direct internet), **10 (relay)**. The checksum rejects mistyped codes.
+- **UPnP** (`net/upnp.cpp`): the host asks the router to open the port automatically (SSDP to find the
+  router, SOAP to request the mapping). Handles lease renewal, port conflicts and routers that don't
+  support it. It cannot work behind CGNAT (mobile data), which is why the relay exists.
+- **Relay** (`relay/`, server EU-1 on AWS): a public server acting as a bridge. The host opens a room
+  on the relay and gets a number; the client connects to the relay with that number and the relay
+  forwards bytes between the two (encrypted, so the relay cannot read them). Per-IP limits, timeouts,
+  and a 90-second grace period if the host drops for a moment. The host pings the relay every second
+  and shows that round trip in its Network tab.
+- **Several relays**: the mod measures the latency to every relay in the list (`probeRelays`) and uses
+  the fastest. The list can be updated from a URL without updating the mod.
 
-### `session_manager.cpp`: la sessione per tutto il gioco
-Tiene la stanza (host o client) anche fuori dall'editor, chiama `pump()` ogni frame, mostra le
-notifiche (entrato, uscito, riconnesso...), sceglie il codice da mostrare (relay > internet > rete
-locale) e collega/scollega l'editor.
+---
 
-### `autosave.cpp`: nessun lavoro perso
-- L'host salva la stanza nel suo livello ogni 90 s (5 min per livelli enormi) se è cambiata, anche
-  quando è nei menu: il livello viene ricostruito dalla Replica (`buildLevelString`) e compresso
-  come fa GD (`ZipUtils::compressString`).
-- Salva anche quando l'host esce dall'editor, quando chiude la stanza e quando GD salva il gioco
-  (hook di `AppDelegate::trySaveGame`).
-- I client hanno una copia di backup "NL - <host>".
-- Chiudendo GD da host compare un avviso (hook di `MenuLayer::onQuit`).
+## 7. The mod in Geometry Dash (compat/gd2208-geode5/src)
 
-### Altri file
-| File | Cosa fa |
+### `editor_tracker.cpp`: the heart of editor sync
+- Uses Geode **hooks** (`$modify`) on editor functions: create, delete, move, rotate, scale, flip,
+  undo/redo, playtest, touches.
+- **Detecting local changes**: keeps a copy of each object's properties (*cache*). Every frame it
+  compares the touched objects with the cache; if something changed it sends a SetProps with only the
+  differences. A **sweep** checks 100 objects per frame to catch changes no hook saw.
+- **Applying other players' changes** (`applyRemote`): creates, replaces or deletes objects in the
+  editor, ignoring its own hooks meanwhile so it doesn't send the same change back.
+- **Crash safety**:
+  - every tracked object is `retain()`ed, so a stored pointer can never point to freed memory;
+  - while you are in the middle of a gesture (mouse/touch held, swipe, **Shift**) or an edit popup is
+    open, other players' changes that remove or replace objects **wait**, and your own are sent
+    together at the end;
+  - an object is deselected and taken out of its linked group before it is removed;
+  - the exit of a teleport portal (749) is never synced on its own: GD manages it with its entry (747).
+- **Joining / re-entering** (`adoptFromSession`): instead of deleting and recreating everything, it
+  pairs the objects already in the editor with the room's objects **by content** (same property
+  string) and only creates or removes the differences.
+- **Playtest spectating**: during a playtest it sends position, game mode, icon and colour ~30 times
+  per second (`PlayerState`).
+
+### `session_manager.cpp`: the session for the whole game
+Keeps the room (host or client) alive outside the editor too, calls `pump()` every frame, shows
+notices (joined, left, reconnected...), picks the code to show (relay > internet > local network),
+attaches/detaches the editor, writes the room into the level before the host re-enters the editor,
+and opens the editor for players who joined from the main menu once the level has arrived.
+
+### `autosave.cpp`: no lost work
+- The host saves the room into its level every 90 s (5 min for huge levels) when it changed, even
+  from the menus: the level string is rebuilt from the Replica (`buildLevelString`) and compressed
+  like GD does (`ZipUtils::compressString`).
+- Also saves when the host leaves the editor, closes the room, and whenever GD saves the game
+  (`AppDelegate::trySaveGame` hook).
+- Players keep a backup copy "NL - <host>".
+- Quitting GD while hosting shows a warning first (`MenuLayer::onQuit` hook).
+
+### `features.cpp`: collaboration extras
+- **Chat**: `Chat` message (client → host → others). The host sets the real sender id, strips control
+  characters, caps lines at 200 characters and one line every 300 ms per player.
+- **View-only players**: the host keeps a set of view-only players; their ops are rejected
+  (`Rejected`), so the edit is undone in their editor. The flag travels in the Roster.
+- **Restore points**: a copy of the room as its own local level "<name> CP hh:mm" (button, or every
+  10 minutes when the room changed; not automatic on huge levels).
+- **Go to player**: moves the editor camera to the player's presence position.
+- **Crash report prompt**: an "in-room.marker" file exists while you are in a room; if it is still
+  there at the next start, GD closed unexpectedly and NexLevel offers to open the logs and the bug
+  report page.
+
+### Other files
+| File | What it does |
 |---|---|
-| `level_settings_adapter.cpp` | Legge e scrive le impostazioni del livello (44 campi, colori, canzone). |
-| `presence_overlay.cpp` | Disegna il bordo colorato di dove guarda ogni giocatore, le icone e le scie dei playtest. |
-| `nexmenu.cpp` | Il menu NexLevel (schede Room, Players, Network, Settings) e il pulsante nel menu principale. |
-| `ui_kit.cpp` | Grafica del menu: rettangoli arrotondati, gradienti, pulsanti, grafico del ping, indicatore di qualità. |
-| `ping_hud.cpp` | Scritta del ping nell'editor. |
-| `hosting_badge.cpp` | La scritta "Hosting NexLevel room" fuori dall'editor (dentro l'`OverlayManager` di Geode). |
-| `relay_directory.cpp` | Lista dei relay (predefinita + scaricata dall'URL). |
+| `level_settings_adapter.cpp` | Reads and writes level settings (44 fields, colours, song). |
+| `presence_overlay.cpp` | Draws each player's view outline, playtest icons and trails. |
+| `nexmenu.cpp` | The NexLevel menu (Room, Players, Chat, Network, Settings) and the main-menu button. |
+| `ui_kit.cpp` | Menu graphics: rounded rectangles, gradients, buttons, ping chart, quality gauge. |
+| `ping_hud.cpp` | The editor label (ping / hosting / view only / placed by). |
+| `hosting_badge.cpp` | The "Hosting NexLevel room" badge outside the editor (Geode `OverlayManager`). |
+| `relay_directory.cpp` | Relay list (built-in + downloaded from the URL). |
 
 ---
 
-## 7b. Funzioni di collaborazione (`features.cpp`)
-- **Chat**: messaggio `Chat` (client → host → altri). L'host mette l'id vero del mittente, toglie i
-  caratteri di controllo, limita a 200 caratteri e a un messaggio ogni 300 ms per giocatore.
-- **Solo visione**: l'host tiene un insieme di giocatori "view only"; le loro op vengono rifiutate
-  (`Rejected`), quindi sul loro editor la modifica viene annullata. Il flag viaggia nel Roster.
-- **Punti di ripristino**: copia della stanza come livello locale "<nome> CP hh:mm" (a mano o ogni
-  10 minuti se la stanza è cambiata).
-- **Placed by**: l'id di ogni oggetto contiene chi l'ha creato (`NetId::peer()`).
-- **Vai da lui**: sposta la telecamera dell'editor sulla posizione di presenza del giocatore.
-- **Segnalazione crash**: un file "in-room.marker" esiste mentre sei in una stanza; se al riavvio
-  c'è ancora, GD si è chiuso male e NexLevel propone di aprire i log e la pagina dei bug.
-
-## 8. Ping e qualità della connessione (`session/ping.cpp`)
-Ogni secondo si manda un Ping; chi risponde dice anche quanto ha aspettato prima di rispondere, che
-viene sottratto, così il tempo misurato è solo la rete. Si tengono gli ultimi 60 valori: media,
-**jitter** (quanto varia) e **perdita**. Punteggio = media + 2 × jitter + 10 × perdita%, da cui le
-fasce Demon / Insane / High / Normal / Bad.
+## 8. Ping and connection quality (`session/ping.cpp`)
+A Ping is sent every second; whoever answers also reports how long it waited before answering, which
+is subtracted, so only network time is measured. The last 60 samples are kept: average, **jitter**
+(how much it varies) and **loss**. Score = average + 2 × jitter + 10 × loss%, which gives the bands
+Demon / Insane / High / Normal / Bad.
 
 ---
 
-## 9. Test e build
-- `tools\test-core.ps1`: compila ed esegue i test del core (sincronizzazione con più client
-  simulati, riconnessione, cifratura, relay, UPnP con router finto, compressione...).
-- I test sono stati eseguiti anche con **AddressSanitizer** (errori di memoria) e
-  **ThreadSanitizer** (errori tra thread).
-- GitHub Actions ricompila e testa il core su Windows, Linux e macOS a ogni push, compila la mod per
-  Windows e, con un tag `vX.Y.Z`, pubblica la release con il file `.geode`.
-- `tools\bot.ps1`: un "giocatore finto" da terminale che entra nella stanza, piazza blocchi e
-  simula un playtest, per provare senza un secondo PC.
+## 9. Tests and builds
+- `tools\test-core.ps1`: builds and runs the core tests (sync with several simulated clients,
+  reconnection, encryption, relay, UPnP with a fake router, compression, chat, view-only...).
+- The tests were also run under **AddressSanitizer** (memory errors) and **ThreadSanitizer** (thread
+  errors).
+- GitHub Actions rebuilds and tests the core on Windows, Linux and macOS on every push, builds the mod
+  for Windows and, with a `vX.Y.Z` tag, publishes the release with the `.geode` file.
+- `tools\bot.ps1`: a command-line fake player that joins a room, places blocks and simulates a
+  playtest, to test without a second PC.
 
 ---
 
-## 10. Domande tipiche e risposte brevi
+## 10. Common questions, short answers
 
-- **Perché un host che ordina le op e non tutti alla pari?** È il modo più semplice per avere
-  lo stesso ordine per tutti, e quindi lo stesso livello. Nessun conflitto da risolvere dopo.
-- **Cosa succede se due persone modificano lo stesso oggetto?** Vince l'ultima op nell'ordine
-  dell'host (*last writer wins*), per ogni singola proprietà.
-- **Perché TCP e non UDP?** Le op devono arrivare tutte e in ordine. TCP lo garantisce.
-- **Perché serve il relay?** Su rete mobile e con molti provider (CGNAT) non si possono ricevere
-  connessioni dall'esterno; il relay è un punto pubblico che entrambi possono raggiungere.
-- **Il relay può leggere il livello?** No, inoltra solo dati cifrati end-to-end.
-- **Perché i crash "heap corruption"?** GD tiene puntatori grezzi agli oggetti; toglierne uno mentre
-  GD lo sta usando (gesto in corso, finestra aperta, portale collegato) lascia un puntatore a memoria
-  liberata. Per questo esistono il `retain`, l'attesa durante i gesti e la gestione dei portali.
-- **Come mai l'ingresso nei livelli grandi è veloce?** Snapshot compresso (circa 7×) + livello aperto
-  con il caricatore di GD + abbinamento per contenuto invece di ricreare tutto.
+- **Why a host that orders ops instead of peer-to-peer?** It is the simplest way to get the same order,
+  and therefore the same level, for everyone. No conflicts to resolve afterwards.
+- **What if two people edit the same object?** The later op in the host's order wins (*last writer
+  wins*), per property.
+- **Why TCP and not UDP?** Ops must all arrive, in order. TCP guarantees that.
+- **Why is a relay needed?** On mobile data and with many providers (CGNAT) a device cannot accept
+  connections from outside; the relay is a public point both sides can reach.
+- **Can the relay read the level?** No, it only forwards end-to-end encrypted data.
+- **Why were there heap-corruption crashes?** GD keeps raw pointers to objects; removing one while GD
+  is using it (gesture in progress, popup open, linked portal) leaves a pointer to freed memory. That
+  is why the `retain`, the waiting during gestures and the portal handling exist.
+- **Why is joining big levels fast?** Compressed snapshot (about 7×) + level opened with GD's own
+  loader + pairing by content instead of recreating everything.
