@@ -113,9 +113,6 @@ public:
     void setViewOnly(sync::PeerId peer, bool on);
     bool isViewOnly(sync::PeerId peer) const;
 
-    // Restore points: a copy of the room as its own local level ("<name> CP 14:05").
-    bool saveCheckpoint(bool automatic);
-
     // Autosave (autosave.cpp). The host's room is written into the level it was opened from, also
     // while the host is outside the editor; a player's copy goes to a local "NL - <host>" backup level.
     // toDisk: also write the save file (CCLocalLevels.dat) right away.
@@ -130,7 +127,6 @@ private:
     std::size_t m_chatTotal = 0;
     bool m_chatOpen = false;
     bool m_wasViewOnly = false;
-    std::chrono::steady_clock::time_point m_lastCheckpoint{};
     bool makeHostCopy(std::string* error);
     GJGameLevel* backupLevel();
     void ensureScheduled();

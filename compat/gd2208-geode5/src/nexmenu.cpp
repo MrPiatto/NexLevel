@@ -220,15 +220,9 @@ void NexMenu::buildRoom() {
         addText(captions[i], 6.5f, cx, tileY - 13.f, kit::kMuted, 1, {.5f, .5f});
     }
 
-    if (host) {
-        addButton(kit::button("Restore point", {120.f, 26.f}, kit::Style::Secondary, this, menu_selector(NexMenu::onCheckpoint), 9.f),
-                  W / 2.f - 70.f, 40.f);
-        addButton(kit::button("Close room", {120.f, 26.f}, kit::Style::Danger, this, menu_selector(NexMenu::onLeave), 9.5f),
-                  W / 2.f + 70.f, 40.f);
-    } else {
-        addButton(kit::button("Leave room", {150.f, 26.f}, kit::Style::Danger, this, menu_selector(NexMenu::onLeave), 9.5f), W / 2.f, 40.f);
-    }
-    addText(host ? "Restore point = a copy of the room in your levels (also every 10 min)" : "Your edits are shared live with everyone", 7.f, W / 2.f, 16.f,
+    addButton(kit::button(host ? "Close room" : "Leave room", {150.f, 26.f}, kit::Style::Danger, this,
+                          menu_selector(NexMenu::onLeave), 9.5f), W / 2.f, 40.f);
+    addText(host ? "Everything is saved into this level automatically" : "Your edits are shared live with everyone", 7.f, W / 2.f, 16.f,
             kit::kMuted, 0, {.5f, .5f});
 }
 
@@ -563,10 +557,6 @@ void NexMenu::onToggleViewOnly(CCObject* sender) {
     auto* sm = SessionManager::get();
     sm->setViewOnly(peer, !sm->isViewOnly(peer));
     buildTab();
-}
-
-void NexMenu::onCheckpoint(CCObject*) {
-    if (!SessionManager::get()->saveCheckpoint(false)) notify("Nothing to save yet", NotificationIcon::Info);
 }
 
 void NexMenu::onExit() {

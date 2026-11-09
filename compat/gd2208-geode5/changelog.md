@@ -1,4 +1,5 @@
 # v1.0.4
+- Everything is saved into the room's level itself: no more restore-point copies ("CP 18:40") or extra backup levels in My Levels. Players' copy of the room is the level open in their editor.
 - New mod page: how to host and join, all features, and a "Privacy and online connections" section that explains exactly what other players and the relay can see (no data is collected).
 - Node IDs (with the mod prefix) for the hosting badge, the editor ping label and the players overlay (better compatibility with other mods).
 - Works with rooms of v1.0.3 (same protocol).

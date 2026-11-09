@@ -67,7 +67,7 @@ protected:
     void onSendChat(cocos2d::CCObject*);
     void onGoTo(cocos2d::CCObject* sender);
     void onToggleViewOnly(cocos2d::CCObject* sender);
-    void onCheckpoint(cocos2d::CCObject*);
+
 
     Tab m_tab = Tab::Room;
     bool m_fromEditor = true;

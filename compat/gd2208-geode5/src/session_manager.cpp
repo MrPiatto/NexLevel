@@ -548,9 +548,6 @@ void SessionManager::tick(float dt) {
                     m_lastJoined = true;
                     notify("Joined the room", NotificationIcon::Success);
                     m_roomDirty = true;  // first backup of the room soon after joining
-                    if (m_backupLevel && std::string(m_backupLevel->m_levelName) == "NexLevel room" && !m_client->peers().empty()) {
-                        m_backupLevel->m_levelName = ("NL - " + m_client->peers().front().name).substr(0, 20);
-                    }
                     if (m_editor) m_editor->rebuildFromSession();
                     else if (m_menuJoinPending) openMenuJoinEditor();
                     ids.clear();

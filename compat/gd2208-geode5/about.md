@@ -17,13 +17,13 @@ No IP addresses, no router settings.
 - **Playtests:** when someone playtests, the others watch their icon play right in the editor, with a trail in that player's colour.
 
 ## The NexLevel menu
-Tabs: **Room** (code, players, objects, uptime, restore points), **Players** (ping, profiles, Go to player, view-only, kick), **Chat**, **Network** (connection quality, live ping chart) and **Settings**.
+Tabs: **Room** (code, players, objects, uptime,), **Players** (ping, profiles, Go to player, view-only, kick), **Chat**, **Network** (connection quality, live ping chart) and **Settings**.
 
 ## Rooms
 - Up to 16 players. The host can kick players, make them view-only and close the room.
 - If the host leaves the editor, the room stays open and everyone keeps building.
 - Dropped connections reconnect on their own, without losing work.
-- Autosave while the room changes; players keep a backup copy; restore points every 10 minutes.
+- Autosave into the level itself while the room changes; players keep the room in the level open in their editor.
 
 ## Privacy and online connections
 NexLevel does **not** collect, upload or sell any data, and has no analytics.
@@ -31,6 +31,6 @@ NexLevel does **not** collect, upload or sell any data, and has no analytics.
 - **Relay servers:** to work on any network (including mobile data), rooms go through a Forg3 Studios relay server (official list, or your own one set in the settings). The relay only forwards **encrypted** data: it cannot read levels, names or chat. Like any server, it sees your IP address to connect you; IPs are used only in memory for anti-abuse limits and are never logged or stored; the relay log has connection counts only.
 - **Direct connections:** without a relay, players connect to the host directly (UPnP or same Wi-Fi), so the host's and players' IPs are visible to each other's computers, as in any online game. Your IP is hidden in the menu until you tap Show.
 - **Encryption:** all room traffic is end-to-end encrypted (X25519 + XChaCha20-Poly1305).
-- **Local files only:** settings, autosaves and restore points are saved on your PC.
+- **Local files only:** settings and autosaves are saved on your PC.
 
 Everyone in a room needs the same Geometry Dash and NexLevel version.

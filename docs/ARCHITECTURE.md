@@ -166,7 +166,7 @@ and opens the editor for players who joined from the main menu once the level ha
   like GD does (`ZipUtils::compressString`).
 - Also saves when the host leaves the editor, closes the room, and whenever GD saves the game
   (`AppDelegate::trySaveGame` hook).
-- Players keep a backup copy "NL - <host>".
+- Players keep the room in the level open in their editor (or the one created when joining from the menu).
 - Quitting GD while hosting shows a warning first (`MenuLayer::onQuit` hook).
 
 ### `features.cpp`: collaboration extras
@@ -174,8 +174,6 @@ and opens the editor for players who joined from the main menu once the level ha
   characters, caps lines at 200 characters and one line every 300 ms per player.
 - **View-only players**: the host keeps a set of view-only players; their ops are rejected
   (`Rejected`), so the edit is undone in their editor. The flag travels in the Roster.
-- **Restore points**: a copy of the room as its own local level "<name> CP hh:mm" (button, or every
-  10 minutes when the room changed; not automatic on huge levels).
 - **Go to player**: moves the editor camera to the player's presence position.
 - **Crash report prompt**: an "in-room.marker" file exists while you are in a room; if it is still
   there at the next start, GD closed unexpectedly and NexLevel offers to open the logs and the bug
