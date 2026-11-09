@@ -4,6 +4,8 @@
 #include "ui_common.hpp"
 
 #include <Geode/modify/EditorPauseLayer.hpp>
+#include <Geode/modify/MenuLayer.hpp>
+#include <Geode/ui/GeodeUI.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -43,8 +45,9 @@ float qualityValue(session::Quality q) {
 }
 } // namespace
 
-NexMenu* NexMenu::create() {
+NexMenu* NexMenu::create(bool fromEditor) {
     auto* ret = new NexMenu();
+    ret->m_fromEditor = fromEditor;
     if (ret->init()) {
         ret->autorelease();
         return ret;
@@ -147,6 +150,18 @@ void NexMenu::buildRoom() {
     const auto role = sm->role();
     const auto glass = kit::rgba(30, 34, 66, .85f);
     const auto edge = kit::rgba(kit::kViolet, .3f);
+
+    if (role == Role::None && !m_fromEditor) {
+        add(kit::card({428.f, 176.f}, 12.f, glass, edge, .8f), W / 2.f, 22.f + 88.f);
+        addText("Create together", 14.f, 34.f, 178.f, kit::kText, 1);
+        addText("Rooms are hosted and joined from the level editor:", 8.f, 34.f, 156.f, kit::kMuted);
+        addText("1.  Open the level you want to build on (Create > your level > Edit)", 8.f, 34.f, 134.f, kit::kText);
+        addText("2.  Press Esc and tap  NexLevel Collab", 8.f, 34.f, 116.f, kit::kText);
+        addText("3.  Host room (this level or a safe copy), or paste a code and Join", 8.f, 34.f, 98.f, kit::kText);
+        addText("Players, Network and Settings work from here too.", 7.5f, 34.f, 70.f, kit::kMuted);
+        addText("Everyone needs the same Geometry Dash version", 7.f, W / 2.f, 12.f, kit::kMuted, 0, {.5f, .5f});
+        return;
+    }
 
     if (role == Role::None) {
         // Host card
@@ -503,6 +518,38 @@ void NexMenu::onSaveRelay(CCObject*) {
 }
 
 } // namespace nexlevel::mod
+
+// NexLevel logo button, top right of the main menu: opens the menu (no Host/Join there).
+class $modify(NLMenuLayerButton, MenuLayer) {
+    bool init() {
+        if (!MenuLayer::init()) return false;
+        constexpr float kSize = 38.f;
+        auto* face = CCNode::create();
+        face->setContentSize({kSize, kSize});
+        auto* bg = kit::card({kSize, kSize}, 9.f, kit::rgba(14, 16, 34, .92f), kit::rgba(kit::kTeal, .8f), 1.2f);
+        bg->setPosition({kSize / 2.f, kSize / 2.f});
+        face->addChild(bg);
+        if (auto* logo = geode::createModLogo(Mod::get())) {
+            const float side = std::max(logo->getContentSize().width, logo->getContentSize().height);
+            if (side > 0.f) logo->setScale((kSize - 8.f) / side);
+            logo->setAnchorPoint({.5f, .5f});
+            logo->setPosition({kSize / 2.f, kSize / 2.f});
+            face->addChild(logo);
+        }
+        auto* btn = CCMenuItemSpriteExtra::create(face, this, menu_selector(NLMenuLayerButton::onNexLevelMenu));
+        auto* menu = CCMenu::create();
+        menu->addChild(btn);
+        menu->setID("nexlevel-main-menu"_spr);
+        auto win = CCDirector::sharedDirector()->getWinSize();
+        menu->setPosition({win.width - kSize / 2.f - 8.f, win.height - kSize / 2.f - 8.f});
+        this->addChild(menu, 10);
+        return true;
+    }
+
+    void onNexLevelMenu(CCObject*) {
+        if (auto* menu = nexlevel::mod::NexMenu::create(false)) menu->show();
+    }
+};
 
 // "Collab" button in the editor pause menu (Esc).
 class $modify(NLEditorPauseLayer, EditorPauseLayer) {
