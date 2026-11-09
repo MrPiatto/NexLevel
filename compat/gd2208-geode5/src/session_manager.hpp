@@ -86,7 +86,16 @@ public:
     void submitLocal(sync::Op op);
     const sync::Replica* view() const;
 
+    // Autosave (autosave.cpp). The host's room is written into the level it was opened from, also
+    // while the host is outside the editor; a player's copy goes to a local "NL - <host>" backup level.
+    // toDisk: also write the save file (CCLocalLevels.dat) right away.
+    void saveNow(bool toDisk, const char* reason);
+    bool hosting() const { return m_host != nullptr; }
+    std::size_t playerCount() const;  // others in the room (not counting this player)
+
 private:
+    void autosaveTick();
+    GJGameLevel* backupLevel();
     void ensureScheduled();
     void tick(float dt);
     void releaseMapper();
@@ -105,6 +114,10 @@ private:
     bool m_relayProbing = false;
     std::uint64_t m_roomGeneration = 0;
     std::vector<session::PeerInfo> m_lastPeers;
+    GJGameLevel* m_backupLevel = nullptr;  // player: retained while in the room
+    bool m_roomDirty = false;              // room changed since the last autosave
+    std::chrono::steady_clock::time_point m_lastSave{};
+    float m_badgeTimer = 0.f;
 };
 
 void notify(const std::string& text, geode::NotificationIcon icon = geode::NotificationIcon::Info);

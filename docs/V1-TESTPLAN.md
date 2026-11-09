@@ -16,7 +16,10 @@ Nothing counts as supported until it passes here. Use `tools\bot.ps1` when there
 | 10 | Kick / close | Kick the bot; Close room | bot is told and cannot rejoin; everyone is told |
 | 11 | Relay | `tools\bot.ps1 relay`, setting = 127.0.0.1, Host, bot join with `NEXLEVEL_RELAY` | 10-character code works |
 | 12 | Undo / redo / copy-paste | Do each with a player in the room | the player ends up with the same level |
-| 13 | Quit while hosting | Close GD with a room open | no crash |
+| 13 | Quit while hosting | Main menu Quit (or Esc) with a room open | "Stop hosting?" warning; Cancel keeps the room; Close GD saves and closes, no crash. Also close the window with X: no crash, level saved |
+| 18 | Hosting badge | Host, exit the editor, go to the menus / level list | "Hosting NexLevel room - N players" at the bottom of every screen; gone in the editor and after Close room |
+| 19 | Autosave (host) | Host exits the editor, bot builds for 2 min, then kill GD from Task Manager and reopen | the bot's objects are in the host's level (autosave every 90 s, log `autosaved`) |
+| 20 | Backup (player) | Join as a player, build, then leave | a local level "NL - <host>" exists with the room content; the player's own level is unchanged |
 | 15 | Ping / Info | Collab menu with the bot in the room; press Info | ping shows in ms; graph moves; IP hidden until Show; profile button opens the GD profile |
 | 16 | Watch playtests | Player A playtests while B stays in the editor | B sees A's icon move (right mode: ship, ball...), a trail in A's colour that stays after A stops; a new test starts a new trail |
 | 17 | Everything syncs | Use undo/redo, copy/paste, duplicate, align, edit group, trigger settings, text objects, keyframes, select-all + move | the other player ends up with an identical level (also check after 10 s for sweep corrections in the log) |

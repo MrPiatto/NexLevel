@@ -18,6 +18,7 @@ void runLevelSettingsTests();
 void runPresenceTests();
 void runPingTests();
 void runPlaytestTests();
+void runLevelStringTests();
 
 using namespace nexlevel;
 
@@ -172,6 +173,7 @@ int main() {
     runPresenceTests();
     runPingTests();
     runPlaytestTests();
+    runLevelStringTests();
     std::printf("%d checks, %d failed\n", nltest::checks, nltest::failed);
     return nltest::failed == 0 ? 0 : 1;
 }

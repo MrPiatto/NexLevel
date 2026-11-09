@@ -1,5 +1,6 @@
 #include "session_manager.hpp"
 
+#include "hosting_badge.hpp"
 #include "relay_directory.hpp"
 
 #include <nexlevel/core/net/local_address.hpp>
@@ -119,6 +120,7 @@ bool SessionManager::join(const std::string& roomCode, std::string* error) {
 }
 
 void SessionManager::leave() {
+    if (m_host || m_client) saveNow(true, "leaving the room");
     if (m_host) {
         ++m_roomGeneration;
         m_relayProbing = false;
@@ -130,6 +132,7 @@ void SessionManager::leave() {
     } else if (m_client) {
         m_client->disconnect();
         m_client.reset();
+        if (m_backupLevel) { m_backupLevel->release(); m_backupLevel = nullptr; }
         notify("Left the room", NotificationIcon::Info);
     }
 }
@@ -378,7 +381,10 @@ void SessionManager::detachEditor(IEditorBridge* bridge) {
     if (m_editor != bridge) return;
     m_editor = nullptr;
     if (m_host) {
-        notify("Room still open - players can keep building", NotificationIcon::Info);
+        // In memory now (the editor may be torn down because GD is closing); to disk on the next frame.
+        saveNow(false, "host left the editor");
+        geode::queueInMainThread([] { if (auto* lm = LocalLevelManager::sharedState()) lm->save(); });
+        notify("Room still open - players can keep building. Autosave is on.", NotificationIcon::Info);
     } else if (m_client) {
         leave();
     }
@@ -393,6 +399,7 @@ std::optional<sync::NetId> SessionManager::newId() {
 }
 
 void SessionManager::submitLocal(sync::Op op) {
+    m_roomDirty = true;
     if (m_host) m_host->submitLocal(std::move(op));
     else if (m_client) m_client->submitLocal(std::move(op));
 }
@@ -406,10 +413,18 @@ const sync::Replica* SessionManager::view() const {
 void SessionManager::endClient(const std::string& message, NotificationIcon icon) {
     notify(message, icon);
     log::info("NexLevel: {}", message);
+    saveNow(true, "room ended");  // the player's backup keeps everything built so far
     m_client.reset();
+    if (m_backupLevel) { m_backupLevel->release(); m_backupLevel = nullptr; }
 }
 
-void SessionManager::tick(float) {
+void SessionManager::tick(float dt) {
+    m_badgeTimer += dt;
+    if (m_badgeTimer >= 0.5f) {
+        m_badgeTimer = 0.f;
+        updateHostingBadge();
+    }
+    autosaveTick();
     // Log and announce players joining/leaving (host and client).
     auto now = peers();
     if (now != m_lastPeers) {
@@ -429,6 +444,7 @@ void SessionManager::tick(float) {
     }
     if (m_host) {
         auto ids = m_host->pump();
+        if (!ids.empty()) m_roomDirty = true;
         if (m_editor && !ids.empty()) m_editor->applyRemote(ids);
         return;
     }
@@ -436,6 +452,7 @@ void SessionManager::tick(float) {
 
     using session::ClientState;
     auto ids = m_client->pump();
+    if (!ids.empty()) m_roomDirty = true;
     auto state = m_client->state();
     if (state != m_lastClientState) {
         m_lastClientState = state;
@@ -444,6 +461,7 @@ void SessionManager::tick(float) {
                 if (!m_lastJoined) {
                     m_lastJoined = true;
                     notify("Joined the room", NotificationIcon::Success);
+                    m_roomDirty = true;  // first backup of the room soon after joining
                     if (m_editor) m_editor->rebuildFromSession();
                     ids.clear();
                 } else {

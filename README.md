@@ -12,6 +12,9 @@ Real-time collaborative level editing for Geometry Dash, built on Geode.
   you can watch other players playtest with their icon and a trail.
 - **Rooms.** Short codes, up to 16 players, kick, reconnection, and fast joins of very large
   levels.
+- **No lost work.** Autosave every 90 s while the room changes (also while the host is in the menus),
+  on leaving the editor, closing the room and when GD saves; players keep a backup level. A badge
+  on every screen reminds the host that a room is open, and quitting GD asks first.
 - **Network.** End-to-end encrypted. Uses official relays (they work on any network, including
   mobile data and CGNAT; the nearest one is picked automatically), UPnP, or LAN. A player can
   also set a private relay.
