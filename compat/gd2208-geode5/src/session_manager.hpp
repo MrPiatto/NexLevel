@@ -28,6 +28,7 @@ public:
     virtual ~IEditorBridge() = default;
     virtual void applyRemote(const std::vector<sync::NetId>& ids) = 0;  // apply session view to these objects
     virtual void rebuildFromSession() = 0;                             // replace editor content with session view
+    virtual void adoptFromSession() = 0;                               // editor loaded the room's level string: pair objects
     virtual void seedSession() = 0;                                    // host: publish current editor content
     virtual GJGameLevel* level() const = 0;
     virtual void switchLevel(GJGameLevel* level) = 0;                  // editor now saves into `level`
@@ -89,6 +90,9 @@ public:
     void attachEditor(IEditorBridge* bridge);
     void detachEditor(IEditorBridge* bridge);
     bool isRoomLevel(GJGameLevel* level) const;  // host: the level the room was opened from
+    // Called by LevelEditorLayer::init before GD reads the level: the host's room level gets the
+    // latest room state written into it, so the editor opens it directly (fast) and only pairs objects.
+    void beforeEditorLoads(GJGameLevel* level);
     std::optional<sync::NetId> newId();
     void submitLocal(sync::Op op);
     const sync::Replica* view() const;
@@ -126,6 +130,9 @@ private:
     bool m_roomDirty = false;              // room changed since the last autosave
     std::chrono::steady_clock::time_point m_lastSave{};
     float m_badgeTimer = 0.f;
+    bool m_adoptNext = false;        // the next editor to attach has the room's level string loaded
+    bool m_menuJoinPending = false;  // joined from the main menu: open the editor once the level arrived
+    void openMenuJoinEditor();
 };
 
 void notify(const std::string& text, geode::NotificationIcon icon = geode::NotificationIcon::Info);

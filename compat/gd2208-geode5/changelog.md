@@ -1,11 +1,18 @@
+# v1.0.3
+- Much faster joins on big levels: the level is sent compressed (about 7 times less data), so joining through the relay or on mobile data takes a fraction of the time.
+- Joining from the main menu now waits until the whole level has arrived, then opens it with Geometry Dash's own level loader (the fastest way to load a level).
+- The host going back into the editor no longer rebuilds the level: it opens the saved room directly and only adds or removes what changed meanwhile.
+- Joining from the editor keeps every object that is already identical instead of deleting and re-creating the whole level.
+- Teleport portals: the exit portal is now handled together with its entry portal. Before, syncing it on its own could crash, and made GD create extra exit portals that piled up in the level.
+- Fixed a crash when the host went back into the editor while the room was open.
+- Huge levels autosave every 5 minutes instead of 90 seconds (each save of a very big level takes a moment).
+- Everyone in a room needs v1.0.3 (protocol v8).
+
 # v1.0.2
 - Fixed a crash (heap corruption) when another player's change arrived while you were building, especially with Shift held (continuous building), swiping or dragging. Their changes now apply as soon as you let go, and what you build during the gesture is sent in one go when you release.
 - While any editor popup is open (trigger settings, Edit Object, colours, group IDs...), other players' changes that would replace or delete objects wait until it closes, and your edits from the popup are sent when you close it.
 - Hardening against crashes: NexLevel keeps its own reference to every object it tracks (no stale pointers, whatever way GD deletes objects), skips objects GD cannot build, and only shows game modes and icons that exist in your game when watching playtests.
 - Objects in a linked group are taken out of the group properly when another player deletes or changes them.
-- Teleport portals: the exit portal is now handled together with its entry portal. Before, syncing it on its own could crash, and made GD create extra exit portals that piled up in the level.
-- Fixed a crash when the host went back into the editor while the room was open.
-- Huge levels autosave every 5 minutes instead of 90 seconds (each save of a very big level takes a moment).
 - Thinner outline for other players' view.
 
 # v1.0.1

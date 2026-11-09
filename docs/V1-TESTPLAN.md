@@ -5,7 +5,7 @@ Nothing counts as supported until it passes here. Use `tools\bot.ps1` when there
 | # | Test | How | Pass when |
 |---|---|---|---|
 | 1 | Core | `tools\test-core.ps1` | `0 failed` |
-| 2 | Build | `tools\build.ps1 -Target gd2208` | builds, GD loads `NexLevel loaded ... protocol v7` |
+| 2 | Build | `tools\build.ps1 -Target gd2208` | builds, GD loads `NexLevel loaded ... protocol v8` |
 | 3 | Host + join | Host room, Copy, `tools\bot.ps1 join` | bot's 5 blocks appear; move, rotate, colour, delete arrive; no crash |
 | 4 | Host edits reach players | Place/move/delete while the bot is in the room | bot prints each change |
 | 5 | Level settings | Change a colour channel, background, ground, song | a second player sees the same; the same after leaving and rejoining |

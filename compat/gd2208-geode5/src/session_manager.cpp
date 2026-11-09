@@ -7,6 +7,7 @@
 #include <nexlevel/core/relay/protocol.hpp>
 #include <nexlevel/core/session/room_code.hpp>
 #include <nexlevel/core/sync/level_settings.hpp>
+#include <nexlevel/core/sync/level_string.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -145,19 +146,45 @@ bool SessionManager::makeHostCopy(std::string* error) {
 
 bool SessionManager::joinFromMenu(const std::string& roomCode, std::string* error) {
     if (!join(roomCode, error)) return false;
+    // The editor opens once the whole level has arrived (openMenuJoinEditor), straight on the room's
+    // content: GD's own loader builds it, which is much faster than building it object by object.
+    m_menuJoinPending = true;
+    notify("Joining the room...", NotificationIcon::Loading);
+    return true;
+}
+
+void SessionManager::openMenuJoinEditor() {
+    m_menuJoinPending = false;
+    const auto* room = view();
+    if (!m_client || !room) return;
     auto* level = GameLevelManager::sharedState()->createNewLevel();
     if (!level) {
+        notify("Could not create a level for the room", NotificationIcon::Error);
         leave();
-        if (error) *error = "Could not create a level for the room";
-        return false;
+        return;
     }
-    level->m_levelName = "NexLevel room";
+    const auto& list = m_client->peers();
+    level->m_levelName = ("NL - " + (list.empty() ? std::string("room") : list.front().name)).substr(0, 20);
     level->m_levelDesc = "NexLevel collab room";
+    level->m_levelString = ZipUtils::compressString(sync::buildLevelString(*room, ""), false, 0);
+    if (const auto* settings = room->find(sync::kLevelSettingsId)) {
+        auto song = sync::propsToLevelSettings(settings->props).song;
+        level->m_audioTrack = song.audioTrack;
+        level->m_songID = song.songID;
+        level->m_songIDs = song.songIDs;
+        level->m_sfxIDs = song.sfxIDs;
+    }
     level->retain();
     if (m_backupLevel) m_backupLevel->release();
-    m_backupLevel = level;  // this level is the player's copy of the room (autosave goes here)
-    CCDirector::sharedDirector()->replaceScene(CCTransitionFade::create(0.5f, LevelEditorLayer::scene(level, false)));
-    return true;
+    m_backupLevel = level;  // the player's copy of the room (autosave goes here)
+    m_adoptNext = true;
+    CCDirector::sharedDirector()->replaceScene(CCTransitionFade::create(0.3f, LevelEditorLayer::scene(level, false)));
+}
+
+void SessionManager::beforeEditorLoads(GJGameLevel* level) {
+    if (!m_host || !level || !isRoomLevel(level)) return;
+    saveNow(false, "opening the editor");  // the level string = the room, right now
+    m_adoptNext = true;
 }
 
 void SessionManager::leave() {
@@ -173,6 +200,8 @@ void SessionManager::leave() {
     } else if (m_client) {
         m_client->disconnect();
         m_client.reset();
+        m_menuJoinPending = false;
+        m_adoptNext = false;
         if (m_backupLevel) { m_backupLevel->release(); m_backupLevel = nullptr; }
         notify("Left the room", NotificationIcon::Info);
     }
@@ -415,7 +444,12 @@ void SessionManager::attachEditor(IEditorBridge* bridge) {
         m_editor = nullptr;  // never overwrite a different level with the room's content
         return;
     }
-    bridge->rebuildFromSession();
+    if (m_adoptNext) {
+        m_adoptNext = false;
+        bridge->adoptFromSession();
+    } else {
+        bridge->rebuildFromSession();
+    }
 }
 
 void SessionManager::detachEditor(IEditorBridge* bridge) {
@@ -456,6 +490,8 @@ void SessionManager::endClient(const std::string& message, NotificationIcon icon
     log::info("NexLevel: {}", message);
     saveNow(true, "room ended");  // the player's backup keeps everything built so far
     m_client.reset();
+    m_menuJoinPending = false;
+    m_adoptNext = false;
     if (m_backupLevel) { m_backupLevel->release(); m_backupLevel = nullptr; }
 }
 
@@ -507,6 +543,7 @@ void SessionManager::tick(float dt) {
                         m_backupLevel->m_levelName = ("NL - " + m_client->peers().front().name).substr(0, 20);
                     }
                     if (m_editor) m_editor->rebuildFromSession();
+                    else if (m_menuJoinPending) openMenuJoinEditor();
                     ids.clear();
                 } else {
                     notify("Reconnected", NotificationIcon::Success);

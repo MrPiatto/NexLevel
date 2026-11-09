@@ -428,28 +428,64 @@ public:
         if (!m_settingsCache.empty()) sm->submitLocal(nls::Op::create(nls::kLevelSettingsId, m_settingsCache));
     }
 
+    // Make the editor match the room (joining, or the host restarted). Objects that are already
+    // identical are kept and paired (adoptFromSession), so only real differences cost anything.
     void rebuildFromSession() override {
         auto* view = SessionManager::get()->view();
         if (!view) return;
-        RemoteScope scope(*this);
-        std::vector<GameObject*> existing;
-        forEachLevelObject([&](GameObject* o) { existing.push_back(o); });
         if (auto* ui = EditorUI::get()) ui->deselectAll();  // no selection may point at removed objects
-        for (auto* o : existing) o->retain();  // removing an entry portal may remove its exit too
-        for (auto* o : existing) {
-            if (o->getParent()) removeForRemote(o);
-        }
-        for (auto* o : existing) o->release();
-        // Old undo/redo entries point at objects that are no longer part of the shared level.
+        // Old undo/redo entries point at objects that may no longer be part of the shared level.
         if (m_layer->m_undoObjects) m_layer->m_undoObjects->removeAllObjects();
         if (m_layer->m_redoObjects) m_layer->m_redoObjects->removeAllObjects();
         dropAll();
         m_dirty.clear();
         m_pendingRemoval.clear();
         m_deferred.clear();
-        spawnMany(*view);
+        adoptFromSession();
+    }
+
+    // The editor just loaded a level string written from the room state (host coming back into the
+    // editor, or a player who joined from the main menu): GD's own loader already built everything,
+    // so instead of removing and re-creating the whole level, pair each object with its room id by
+    // content. Only what differs (changes that arrived meanwhile) is removed or created.
+    void adoptFromSession() override {
+        auto* view = SessionManager::get()->view();
+        if (!view) return;
+        RemoteScope scope(*this);
+        std::unordered_map<std::string, std::vector<nls::NetId>> byContent;
+        byContent.reserve(view->objects().size());
+        for (const auto& [id, state] : view->objects()) {
+            if (!nls::isLevelSettings(id) && spawnable(state.props)) byContent[nls::toSaveString(state.props)].push_back(id);
+        }
+        std::vector<GameObject*> extras;
+        std::size_t matched = 0;
+        forEachLevelObject([&](GameObject* o) {
+            auto props = read(o);
+            auto it = byContent.find(nls::toSaveString(props));
+            if (it == byContent.end() || it->second.empty()) {
+                extras.push_back(o);
+                return;
+            }
+            map(o, it->second.back());
+            it->second.pop_back();
+            cachePut(o, std::move(props));
+            ++matched;
+        });
+        for (auto* o : extras) o->retain();
+        for (auto* o : extras) {
+            if (o->getParent()) removeForRemote(o);
+        }
+        for (auto* o : extras) o->release();
+        std::vector<std::pair<nls::NetId, const nls::PropMap*>> missing;
+        for (auto& [_, ids] : byContent) {
+            for (auto id : ids) {
+                if (const auto* st = view->find(id)) missing.emplace_back(id, &st->props);
+            }
+        }
+        spawnList(missing);
         applySettingsFromView(*view);
-        log::info("NexLevel: editor rebuilt from room ({} objects)", view->objects().size());
+        log::info("NexLevel: editor matched to the room: {} objects kept, {} created, {} removed", matched, missing.size(),
+                  extras.size());
     }
 
     void applyRemote(const std::vector<nls::NetId>& ids) override {
@@ -545,11 +581,7 @@ private:
     // Whole level at once (join / rebuild): one createObjectsFromString call per batch is far
     // faster than one per object. Batches map back to ids by order; if GD skipped any object in a
     // batch, that batch is redone one object at a time so every id still gets its object.
-    void spawnMany(const nls::Replica& view) {
-        std::vector<std::pair<nls::NetId, const nls::PropMap*>> todo;
-        for (const auto& [id, state] : view.objects()) {
-            if (!nls::isLevelSettings(id) && spawnable(state.props)) todo.emplace_back(id, &state.props);
-        }
+    void spawnList(const std::vector<std::pair<nls::NetId, const nls::PropMap*>>& todo) {
         constexpr std::size_t kBatch = 2000;
         for (std::size_t start = 0; start < todo.size(); start += kBatch) {
             const std::size_t end = std::min(todo.size(), start + kBatch);
@@ -828,6 +860,11 @@ class $modify(NLEditorUI, EditorUI) {
 };
 
 class $modify(NLLevelEditorLayer, LevelEditorLayer) {
+    bool init(GJGameLevel* level, bool noUI) {
+        nexlevel::mod::SessionManager::get()->beforeEditorLoads(level);  // before GD reads the level
+        return LevelEditorLayer::init(level, noUI);
+    }
+
     GameObject* createObject(int key, CCPoint position, bool noUndo) {
         auto obj = LevelEditorLayer::createObject(key, position, noUndo);
         if (g_tracker) g_tracker->onCreated(obj, "createObject");
