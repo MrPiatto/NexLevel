@@ -1,4 +1,5 @@
 # v1.0.1
+- Fixed a crash (heap corruption) when another player's change arrived while you were building, especially with Shift held (continuous building), swiping or dragging. Their changes now apply as soon as you let go, and what you build during the gesture is sent in one go when you release.
 - Fixed a crash when another player deleted an object you had selected.
 - Other players' view is now shown as an outline only (no tint over the level).
 

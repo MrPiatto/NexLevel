@@ -18,6 +18,7 @@
 #include "session_manager.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -44,6 +45,21 @@ template <class F>
 void forEachObject(CCArray* objects, F&& f) {
     if (!objects) return;
     for (auto* o : CCArrayExt<GameObject*>(objects)) f(o);
+}
+
+// Touches currently held on the editor (EditorUI::ccTouchBegan..Ended hooks below).
+int g_editorTouches = 0;
+
+// True while the local player is in the middle of an edit: a touch/click is held, swipe is running,
+// or Shift (continuous building) is held. GD keeps raw pointers to the objects it is placing,
+// dragging and swiping until the gesture ends, so remote changes that remove or replace objects
+// must wait until then (doing it mid-gesture corrupts the heap), and local changes are sent as
+// one batch when the gesture ends.
+bool editorBusy(EditorUI* ui) {
+    if (g_editorTouches > 0) return true;
+    if (ui && ui->m_swipeActive) return true;
+    if (auto* kb = CCKeyboardDispatcher::get(); kb && kb->getShiftKeyPressed()) return true;
+    return false;
 }
 
 class EditorTracker : public nexlevel::mod::IEditorBridge {
@@ -163,7 +179,7 @@ public:
             log::debug("NexLevel diff: removed object id={}", kind);
         }
         if (auto it = m_objToId.find(o); it != m_objToId.end()) {
-            if (SessionManager::get()->inSession()) SessionManager::get()->submitLocal(nls::Op::erase(it->second));
+            send(nls::Op::erase(it->second));
             unmap(o);
         }
         forget(o);
@@ -239,6 +255,19 @@ public:
             SessionManager::get()->attachEditor(this);
             return;
         }
+        const bool wasBusy = m_busy;
+        m_busy = editorBusy(EditorUI::get());
+        // Safety net: a touch-end or key-up that never arrives (focus lost mid-gesture) must not
+        // hold the room back forever.
+        if (m_busy) {
+            if (!wasBusy) m_busySince = std::chrono::steady_clock::now();
+            else if (std::chrono::steady_clock::now() - m_busySince > std::chrono::seconds(30)) {
+                log::warn("NexLevel: editor looked busy for 30 s, releasing held changes");
+                g_editorTouches = 0;
+                m_busy = false;
+            }
+        }
+        if (wasBusy && !m_busy) flushOutbox();  // before this frame's own changes, to keep the order
         playtestTick();  // rate limited to ~30/s inside
         if (!ignoring()) {
             reconcileRemovals();
@@ -279,8 +308,8 @@ public:
 
         nexlevel::mod::updatePresence(m_layer, m_paused);
 
-        // Remote changes held back while the local user had the object selected.
-        if (!m_deferred.empty() && !m_paused) {
+        // Remote changes held back while the local user had the object selected or was mid-gesture.
+        if (!m_deferred.empty() && !m_paused && !m_busy) {
             std::vector<nls::NetId> retry(m_deferred.begin(), m_deferred.end());
             m_deferred.clear();
             applyRemote(retry);
@@ -387,6 +416,10 @@ public:
             const auto* state = view->find(id);
             auto it = m_idToObj.find(id);
             GameObject* obj = it == m_idToObj.end() ? nullptr : it->second;
+            if (obj && m_busy) {  // never remove/replace an object while GD is mid-gesture
+                m_deferred.insert(id);
+                continue;
+            }
             if (!state) {
                 if (obj) {
                     log::debug("NexLevel trace: delete {} (obj id {})", id.value, obj->m_objectID);
@@ -475,13 +508,30 @@ private:
         }
     }
 
+    // Local object ops: queued while the player is mid-gesture, sent in order when it ends.
+    void send(nls::Op op) {
+        auto* sm = SessionManager::get();
+        if (!sm->inSession()) return;
+        if (m_busy) m_outbox.push_back(std::move(op));
+        else sm->submitLocal(std::move(op));
+    }
+    void flushOutbox() {
+        if (m_outbox.empty()) return;
+        auto* sm = SessionManager::get();
+        log::debug("NexLevel: sending {} change(s) made during the gesture", m_outbox.size());
+        if (sm->inSession()) {
+            for (auto& op : m_outbox) sm->submitLocal(std::move(op));
+        }
+        m_outbox.clear();
+    }
+
     void publishCreate(GameObject* o, const nls::PropMap& props) {
         auto* sm = SessionManager::get();
         if (!sm->inSession() || m_objToId.contains(o)) return;
         auto id = sm->newId();
         if (!id) return;
         map(o, *id);
-        sm->submitLocal(nls::Op::create(*id, props));
+        send(nls::Op::create(*id, props));
     }
 
     void publishChange(GameObject* o, const nls::PropMap& now, const nls::PropDiff& d) {
@@ -492,7 +542,7 @@ private:
             publishCreate(o, now);  // touched for the first time since joining
             return;
         }
-        sm->submitLocal(nls::Op::setProps(it->second, d));
+        send(nls::Op::setProps(it->second, d));
     }
 
     void map(GameObject* o, nls::NetId id) {
@@ -558,6 +608,9 @@ private:
     bool m_paused = false;
     bool m_armed = false;
     bool m_applyingRemote = false;
+    bool m_busy = false;              // local gesture in progress (editorBusy)
+    std::vector<nls::Op> m_outbox;    // local ops held during the gesture
+    std::chrono::steady_clock::time_point m_busySince{};
     nls::PropMap m_settingsCache;
     int m_settingsTick = 0;
     bool m_settingsKnown = false;
@@ -588,9 +641,24 @@ class $modify(NLEditorUI, EditorUI) {
         if (!EditorUI::init(editorLayer)) return false;
         m_fields->tracker = std::make_unique<EditorTracker>(editorLayer);
         g_tracker = m_fields->tracker.get();
+        g_editorTouches = 0;
         this->schedule(schedule_selector(NLEditorUI::nlTick));
         log::info("NexLevel editor tracker active");
         return true;
+    }
+
+    bool ccTouchBegan(CCTouch* touch, CCEvent* event) {
+        const bool claimed = EditorUI::ccTouchBegan(touch, event);
+        if (claimed) ++g_editorTouches;
+        return claimed;
+    }
+    void ccTouchEnded(CCTouch* touch, CCEvent* event) {
+        EditorUI::ccTouchEnded(touch, event);
+        g_editorTouches = std::max(0, g_editorTouches - 1);
+    }
+    void ccTouchCancelled(CCTouch* touch, CCEvent* event) {
+        EditorUI::ccTouchCancelled(touch, event);
+        g_editorTouches = std::max(0, g_editorTouches - 1);
     }
 
     void nlTick(float) {
