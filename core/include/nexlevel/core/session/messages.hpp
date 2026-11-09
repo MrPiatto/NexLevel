@@ -31,6 +31,7 @@ enum class MsgType : std::uint16_t {
     Pong = 16,            // answer to Ping (echoes it, says how long it waited before answering)
     PingTable = 17,       // host -> all: everyone's ping to the host
     PlayerState = 18,     // either way: a player's icon while they playtest (spectating + trail)
+    SnapshotChunkZ = 21,  // host -> joining client: SnapshotChunk, compressed (u32 raw size + LZ block)
     Sealed = 20,       // encrypted envelope around any of the above (see crypto/secure_channel.hpp)
 };
 
@@ -121,6 +122,8 @@ struct PingTable {
 inline constexpr std::size_t kMaxDisplayName = 32;
 inline constexpr std::size_t kChunkTargetBytes = 192 * 1024;  // well under the 1 MiB frame cap
 inline constexpr std::size_t kMaxChunkEntries = 200'000;
+inline constexpr std::size_t kChunkTargetBytesZ = 512 * 1024;  // raw size of a compressed chunk
+inline constexpr std::size_t kMaxChunkRawBytes = 1024 * 1024;
 
 std::vector<std::uint8_t> encode(const Hello& m);
 std::vector<std::uint8_t> encode(const Secure& m);
@@ -137,6 +140,8 @@ std::vector<std::uint8_t> encode(const Roster& m);
 std::vector<std::uint8_t> encodeOpMsg(const sync::Op& op);  // Submit and Sequenced payload
 // Splits a replica into SnapshotChunk payloads of ~kChunkTargetBytes each (at least one chunk).
 std::vector<std::vector<std::uint8_t>> encodeSnapshotChunks(const sync::Replica& state);
+// Same chunks, bigger and compressed (SnapshotChunkZ payloads). Big levels shrink several times.
+std::vector<std::vector<std::uint8_t>> encodeSnapshotChunksZ(const sync::Replica& state);
 
 std::optional<Hello> decodeHello(std::span<const std::uint8_t> p);
 std::optional<Secure> decodeSecure(std::span<const std::uint8_t> p);
@@ -147,6 +152,7 @@ std::optional<PingTable> decodePingTable(std::span<const std::uint8_t> p);
 std::optional<PlayerState> decodePlayerState(std::span<const std::uint8_t> p);
 std::optional<Welcome> decodeWelcome(std::span<const std::uint8_t> p);
 std::optional<SnapshotChunk> decodeSnapshotChunk(std::span<const std::uint8_t> p);
+std::optional<SnapshotChunk> decodeSnapshotChunkZ(std::span<const std::uint8_t> p);
 std::optional<SnapshotEnd> decodeSnapshotEnd(std::span<const std::uint8_t> p);
 std::optional<Refuse> decodeRefuse(std::span<const std::uint8_t> p);
 std::optional<Rejected> decodeRejected(std::span<const std::uint8_t> p);

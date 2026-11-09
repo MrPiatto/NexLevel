@@ -338,7 +338,7 @@ struct SessionHost::Impl {
     void sendJoinPackage(std::uint32_t conn, const Peer& p, bool resumed) {
         sendTo(conn, MsgType::Welcome, encode(Welcome{p.id, p.token, sequencer.highestClientSeq(p.id), resumed}));
         const auto& state = sequencer.state();
-        for (auto& chunk : encodeSnapshotChunks(state)) sendTo(conn, MsgType::SnapshotChunk, std::move(chunk));
+        for (auto& chunk : encodeSnapshotChunksZ(state)) sendTo(conn, MsgType::SnapshotChunkZ, std::move(chunk));
         sendTo(conn, MsgType::SnapshotEnd, encode(SnapshotEnd{state.lastSeq(), static_cast<std::uint32_t>(state.objects().size()),
                                                               static_cast<std::uint32_t>(state.tombstones().size())}));
     }

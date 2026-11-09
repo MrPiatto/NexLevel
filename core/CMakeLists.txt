@@ -48,6 +48,7 @@ find_package(Threads REQUIRED)
 
 add_library(nexlevel_core STATIC
     src/bytes.cpp
+    src/compress.cpp
     src/frame.cpp
     src/net/loopback_probe.cpp
     src/net/local_address.cpp
@@ -85,7 +86,7 @@ set_target_properties(nexlevel_core PROPERTIES
 option(NEXLEVEL_BUILD_TESTS "Build nexlevel_core unit tests" ${PROJECT_IS_TOP_LEVEL})
 if(NEXLEVEL_BUILD_TESTS)
     enable_testing()
-    add_executable(nexlevel_core_tests tests/test_main.cpp tests/test_sync.cpp tests/test_session.cpp tests/test_upnp.cpp tests/test_crypto.cpp tests/test_relay.cpp tests/test_level_settings.cpp tests/test_presence.cpp tests/test_ping.cpp tests/test_playtest.cpp tests/test_level_string.cpp)
+    add_executable(nexlevel_core_tests tests/test_main.cpp tests/test_sync.cpp tests/test_session.cpp tests/test_upnp.cpp tests/test_crypto.cpp tests/test_relay.cpp tests/test_level_settings.cpp tests/test_presence.cpp tests/test_ping.cpp tests/test_playtest.cpp tests/test_level_string.cpp tests/test_compress.cpp)
     target_link_libraries(nexlevel_core_tests PRIVATE nexlevel_core)
     # Network tests drive raw sockets / mock servers with Asio directly.
     target_include_directories(nexlevel_core_tests PRIVATE ${NEXLEVEL_ASIO_INCLUDE})

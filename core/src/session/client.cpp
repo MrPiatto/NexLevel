@@ -385,8 +385,9 @@ std::vector<sync::NetId> SessionClient::pump() {
                     if (!m->welcome) { m->error = "malformed welcome"; disconnect(); break; }
                     m->incomingObjects.clear();
                     m->incomingTombstones.clear();
-                } else if (joining && m->welcome && type == MsgType::SnapshotChunk) {
-                    auto chunk = decodeSnapshotChunk(e.frame.payload);
+                } else if (joining && m->welcome && (type == MsgType::SnapshotChunk || type == MsgType::SnapshotChunkZ)) {
+                    auto chunk = type == MsgType::SnapshotChunkZ ? decodeSnapshotChunkZ(e.frame.payload)
+                                                                 : decodeSnapshotChunk(e.frame.payload);
                     if (!chunk) { m->error = "malformed snapshot"; disconnect(); break; }
                     for (auto& [id, props] : chunk->objects) m->incomingObjects[id] = sync::ObjectState{std::move(props)};
                     for (auto id : chunk->tombstones) m->incomingTombstones.insert(id);

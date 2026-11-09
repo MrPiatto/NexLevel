@@ -6,7 +6,7 @@
 namespace nexlevel {
 
 // Bumped on any incompatible wire-format change. Identical on all game targets.
-inline constexpr std::uint16_t kProtocolVersion = 7;  // v7: playtest spectating (v6: ping, v5: presence, v4: encryption)
+inline constexpr std::uint16_t kProtocolVersion = 8;  // v8: compressed snapshots (v7: playtest spectating v6: ping, v5: presence, v4: encryption)
 
 // Game line a build targets. V1 rule: host and client must match exactly.
 enum class GameTarget : std::uint8_t {

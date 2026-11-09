@@ -1,5 +1,7 @@
 #include <nexlevel/core/session/messages.hpp>
 
+#include <nexlevel/core/compress.hpp>
+
 #include <algorithm>
 
 namespace nexlevel::session {
@@ -95,7 +97,38 @@ std::vector<std::uint8_t> encodeOpMsg(const sync::Op& op) {
     return w.take();
 }
 
+namespace {
+std::vector<std::vector<std::uint8_t>> encodeChunks(const sync::Replica& state, std::size_t target);
+}
+
 std::vector<std::vector<std::uint8_t>> encodeSnapshotChunks(const sync::Replica& state) {
+    return encodeChunks(state, kChunkTargetBytes);
+}
+
+std::vector<std::vector<std::uint8_t>> encodeSnapshotChunksZ(const sync::Replica& state) {
+    auto raw = encodeChunks(state, kChunkTargetBytesZ);
+    for (auto& chunk : raw) {
+        auto packed = lzCompress(chunk);
+        ByteWriter w;
+        w.u32(static_cast<std::uint32_t>(chunk.size()));
+        w.bytes(packed);
+        chunk = w.take();
+    }
+    return raw;
+}
+
+std::optional<SnapshotChunk> decodeSnapshotChunkZ(std::span<const std::uint8_t> p) {
+    if (p.size() < 4) return std::nullopt;
+    const std::uint32_t rawSize = static_cast<std::uint32_t>(p[0]) | (static_cast<std::uint32_t>(p[1]) << 8) |
+                                  (static_cast<std::uint32_t>(p[2]) << 16) | (static_cast<std::uint32_t>(p[3]) << 24);
+    if (rawSize > kMaxChunkRawBytes) return std::nullopt;
+    auto raw = lzDecompress(p.subspan(4), rawSize);
+    if (!raw) return std::nullopt;
+    return decodeSnapshotChunk(*raw);
+}
+
+namespace {
+std::vector<std::vector<std::uint8_t>> encodeChunks(const sync::Replica& state, std::size_t target) {
     std::vector<std::vector<std::uint8_t>> chunks;
     // Chunk layout: u32 objectCount, objects..., u32 tombstoneCount, tombstones...
     ByteWriter body;
@@ -114,14 +147,14 @@ std::vector<std::vector<std::uint8_t>> encodeSnapshotChunks(const sync::Replica&
         body.u64(id.value);
         writeProps(body, obj.props);
         ++count;
-        if (body.size() >= kChunkTargetBytes || count >= kMaxChunkEntries) flushObjects(false);
+        if (body.size() >= target || count >= kMaxChunkEntries) flushObjects(false);
     }
     flushObjects(false);
 
     // Tombstones, 8 bytes each.
     std::vector<sync::NetId> dead(state.tombstones().begin(), state.tombstones().end());
     for (std::size_t i = 0; i < dead.size();) {
-        std::size_t n = std::min(dead.size() - i, std::min<std::size_t>(kChunkTargetBytes / 8, kMaxChunkEntries));
+        std::size_t n = std::min(dead.size() - i, std::min<std::size_t>(target / 8, kMaxChunkEntries));
         ByteWriter w;
         w.u32(0);
         w.u32(static_cast<std::uint32_t>(n));
@@ -132,6 +165,7 @@ std::vector<std::vector<std::uint8_t>> encodeSnapshotChunks(const sync::Replica&
     if (chunks.empty()) flushObjects(true);  // empty level: still one (empty) chunk
     return chunks;
 }
+} // namespace
 
 std::optional<Hello> decodeHello(std::span<const std::uint8_t> p) {
     ByteReader r(p);
