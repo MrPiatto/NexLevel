@@ -66,3 +66,7 @@ several relays run side by side, one per region, with more added as the player c
   until the directory is downloaded.
 - **Older builds.** A build that does not know a relay id says "update NexLevel" instead of
   failing silently.
+
+
+## Public counters
+Since NexLevel v1.0.4 the relay answers `StatsRequest` with the number of open rooms and connected players (totals only). The mod shows them in its main-menu menu. **Update the relay** (`tools\relay-upload.ps1`) to enable it; older relays just close the connection and the menu shows "-".

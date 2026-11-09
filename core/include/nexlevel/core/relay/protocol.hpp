@@ -33,12 +33,14 @@ enum class Kind : std::uint8_t {
     Join = 3,         // player:       u32 roomId
     Ping = 4,         // host control keepalive, no body
     Probe = 5,        // latency check, no body: the relay answers Pong and closes
+    StatsRequest = 6, // public counters, no body: the relay answers Stats and closes
     // from the relay
     RoomOpened = 0x81,  // u32 roomId, u64 secret
     Incoming = 0x82,    // u32 stream: open a data connection for it
     Pong = 0x83,        // no body
     Paired = 0x84,      // to the player: the pipe to the host is open, start the session
     Error = 0x85,       // u8 ErrorCode, then the relay closes
+    Stats = 0x86,       // u32 rooms, u32 players (hosts + joined players right now)
 };
 
 enum class ErrorCode : std::uint8_t { NoRoom = 1, RoomFull = 2, RelayBusy = 3, BadRequest = 4, Timeout = 5 };
@@ -54,6 +56,8 @@ struct Message {
     std::uint64_t secret = 0;
     std::uint32_t stream = 0;
     ErrorCode error = ErrorCode::BadRequest;
+    std::uint32_t statRooms = 0;
+    std::uint32_t statPlayers = 0;
 };
 
 std::vector<std::uint8_t> encode(const Message& m);
@@ -67,6 +71,13 @@ struct RelayEndpoint {
 // Round trip to each relay (Probe -> Pong), nullopt if unreachable within the timeout.
 // Blocking: call it from a worker thread. All relays are probed in parallel.
 std::vector<std::optional<float>> probeRelays(const std::vector<RelayEndpoint>& relays, std::chrono::milliseconds timeout);
+// Live counters of each relay (rooms open, players connected); nullopt if unreachable or too old.
+// Blocking, all relays in parallel.
+struct RelayCounters {
+    std::uint32_t rooms = 0;
+    std::uint32_t players = 0;
+};
+std::vector<std::optional<RelayCounters>> queryRelayStats(const std::vector<RelayEndpoint>& relays, std::chrono::milliseconds timeout);
 // Header check: nullopt if magic/version/kind is wrong.
 std::optional<Kind> decodeHeader(std::span<const std::uint8_t> header);
 std::optional<Message> decodeBody(Kind k, std::span<const std::uint8_t> body);

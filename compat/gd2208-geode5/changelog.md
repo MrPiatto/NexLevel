@@ -1,4 +1,5 @@
 # v1.0.4
+- Main-menu NexLevel menu shows live community numbers: players online and rooms open on the official relays, and total downloads.
 - Update notice: at startup NexLevel checks the official releases; if a newer version is out it shows what's new and installs it with one button, then restarts the game (3... 2... 1...).
 - Welcome screen with the changelog the first time a new version starts.
 - Everything is saved into the host's level itself: no more restore-point copies ("CP 18:40") or extra backup levels in My Levels.

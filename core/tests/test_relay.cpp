@@ -97,6 +97,10 @@ void testRelaySession() {
         return true;
     }, 5000);
     CHECK(joined);
+    if (joined) {  // public counters: 1 room, host + 3 players
+        auto counters = relay::queryRelayStats({relay::RelayEndpoint{3, "test", "127.0.0.1", *rport}}, std::chrono::milliseconds(1500));
+        CHECK(counters.size() == 1 && counters[0].has_value() && counters[0]->rooms == 1 && counters[0]->players == 4);
+    }
     if (!joined) {
         for (auto& c : clients) std::printf("  client state %d err '%s'\n", static_cast<int>(c->state()), c->lastError().c_str());
         return;

@@ -189,6 +189,7 @@ and opens the editor for players who joined from the main menu once the level ha
 | `ping_hud.cpp` | The editor label (ping / hosting / view only / placed by). |
 | `hosting_badge.cpp` | The "Hosting NexLevel room" badge outside the editor (Geode `OverlayManager`). |
 | `relay_directory.cpp` | Relay list (built-in + downloaded from the URL). |
+| `community_stats.cpp` | Main-menu numbers: downloads (GitHub releases API + Geode index API) and live players/rooms (relay `StatsRequest` → `Stats`). |
 | `updater.cpp` | Update check (GitHub latest release), one-click install of the official `.geode` + restart, welcome screen after an update. Setting `check-updates`. |
 
 ---

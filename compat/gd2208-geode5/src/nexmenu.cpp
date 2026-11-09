@@ -1,5 +1,6 @@
 #include "nexmenu.hpp"
 
+#include "community_stats.hpp"
 #include "presence_overlay.hpp"
 #include "session_manager.hpp"
 #include "ui_common.hpp"
@@ -75,6 +76,7 @@ bool NexMenu::init() {
     m_mainLayer->addChildAtPosition(panel, Anchor::Center);
     panel->setZOrder(-10);
 
+    if (!m_fromEditor) refreshCommunityStats();
     buildTab();
     this->schedule(schedule_selector(NexMenu::refresh), .5f);
     return true;
@@ -105,6 +107,7 @@ void NexMenu::buildTab() {
     for (auto* n : m_dynamic) n->removeFromParent();
     m_dynamic.clear();
     m_codeInput = m_relayInput = m_chatInput = nullptr;
+    m_communityText = nullptr;
     m_codeText = m_onlineText = m_statPlayers = m_statObjects = m_statUptime = nullptr;
     m_pingRows.clear();
     m_gauge = nullptr;
@@ -191,7 +194,11 @@ void NexMenu::buildRoom() {
         addButton(kit::button("Join", {100.f, 22.f}, kit::Style::Primary, this, menu_selector(NexMenu::onJoin), 9.f), 380.f, 100.f);
         if (m_fromEditor) addText("Joining replaces the level open in your editor", 6.8f, 238.f + 103.f, 66.f, kit::kDanger, 0, {.5f, .5f});
         else addText("Opens the room in a new level - your levels are safe", 6.8f, 238.f + 103.f, 66.f, kit::kGood, 0, {.5f, .5f});
-        addText("Everyone needs the same Geometry Dash version", 7.f, W / 2.f, 12.f, kit::kMuted, 0, {.5f, .5f});
+        if (m_fromEditor) {
+            addText("Everyone needs the same Geometry Dash version", 7.f, W / 2.f, 12.f, kit::kMuted, 0, {.5f, .5f});
+        } else {
+            m_communityText = addText("Loading NexLevel stats...", 7.5f, W / 2.f, 12.f, kit::kTeal, 1, {.5f, .5f});
+        }
         return;
     }
 
@@ -368,6 +375,13 @@ void NexMenu::buildSettings() {
 void NexMenu::updateLive() {
     auto* sm = SessionManager::get();
     const auto role = sm->role();
+
+    if (m_communityText) {
+        const auto& st = communityStats();
+        auto num = [](const std::optional<int>& v) { return v ? std::to_string(*v) : std::string("-"); };
+        kit::setTextIfChanged(m_communityText, num(st.online) + " online now   |   " + num(st.rooms) + " rooms   |   " +
+                                                   num(st.downloads) + " downloads");
+    }
 
     // Header status.
     ccColor3B dot = kit::kMuted;

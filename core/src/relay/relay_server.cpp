@@ -235,6 +235,15 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
         asio::async_read(*sock, asio::buffer(hs->header), [this, sock, slot, hs](std::error_code rec, std::size_t) {
             if (rec) { hs->timer.cancel(); return; }
             auto kind = decodeHeader(hs->header);
+            if (kind == Kind::StatsRequest) {  // public counters for the mod's main menu
+                hs->timer.cancel();
+                Message st{Kind::Stats};
+                st.statRooms = static_cast<std::uint32_t>(roomCount.load());
+                st.statPlayers = static_cast<std::uint32_t>(roomCount.load() + pipeCount.load());
+                auto reply = std::make_shared<std::vector<std::uint8_t>>(encode(st));
+                asio::async_write(*sock, asio::buffer(*reply), [sock, reply](std::error_code, std::size_t) { closeSocket(*sock); });
+                return;
+            }
             if (kind == Kind::Probe) {  // latency check from a host choosing the nearest relay
                 hs->timer.cancel();
                 auto pong = std::make_shared<std::vector<std::uint8_t>>(encode(Message{Kind::Pong}));

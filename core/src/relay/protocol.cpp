@@ -22,6 +22,8 @@ std::optional<std::size_t> bodySize(Kind k) noexcept {
         case Kind::Join: return 4;
         case Kind::Ping: return 0;
         case Kind::Probe: return 0;
+        case Kind::StatsRequest: return 0;
+        case Kind::Stats: return 8;
         case Kind::RoomOpened: return 12;
         case Kind::Incoming: return 4;
         case Kind::Pong: return 0;
@@ -43,7 +45,8 @@ std::vector<std::uint8_t> encode(const Message& m) {
         case Kind::RoomOpened: w.u32(m.roomId); w.u64(m.secret); break;
         case Kind::Incoming: w.u32(m.stream); break;
         case Kind::Error: w.u8(static_cast<std::uint8_t>(m.error)); break;
-        case Kind::Ping: case Kind::Probe: case Kind::Pong: case Kind::Paired: break;
+        case Kind::Stats: w.u32(m.statRooms); w.u32(m.statPlayers); break;
+        case Kind::Ping: case Kind::Probe: case Kind::Pong: case Kind::Paired: case Kind::StatsRequest: break;
     }
     return w.take();
 }
@@ -75,7 +78,8 @@ std::optional<Message> decodeBody(Kind k, std::span<const std::uint8_t> body) {
             m.error = static_cast<ErrorCode>(e);
             break;
         }
-        case Kind::Ping: case Kind::Probe: case Kind::Pong: case Kind::Paired: break;
+        case Kind::Stats: m.statRooms = r.u32(); m.statPlayers = r.u32(); break;
+        case Kind::Ping: case Kind::Probe: case Kind::Pong: case Kind::Paired: case Kind::StatsRequest: break;
     }
     if (!r.atEnd()) return std::nullopt;
     return m;
@@ -126,6 +130,47 @@ std::vector<std::optional<float>> probeRelays(const std::vector<RelayEndpoint>& 
         std::error_code ec;
         p->socket.close(ec);
         p->resolver.cancel();
+    }
+    return out;
+}
+
+std::vector<std::optional<RelayCounters>> queryRelayStats(const std::vector<RelayEndpoint>& relays, std::chrono::milliseconds timeout) {
+    using asio::ip::tcp;
+    std::vector<std::optional<RelayCounters>> out(relays.size());
+    asio::io_context io;
+    struct Query {
+        tcp::resolver resolver;
+        tcp::socket socket;
+        std::array<std::uint8_t, kHeaderSize + 8> reply{};
+        std::vector<std::uint8_t> request;
+        explicit Query(asio::io_context& io) : resolver(io), socket(io) {}
+    };
+    std::vector<std::unique_ptr<Query>> queries;
+    for (std::size_t i = 0; i < relays.size(); ++i) {
+        auto& q = *queries.emplace_back(std::make_unique<Query>(io));
+        q.request = encode(Message{Kind::StatsRequest});
+        q.resolver.async_resolve(relays[i].host, std::to_string(relays[i].port), [&q, &out, i](std::error_code ec, tcp::resolver::results_type results) {
+            if (ec) return;
+            asio::async_connect(q.socket, results, [&q, &out, i](std::error_code cec, const tcp::endpoint&) {
+                if (cec) return;
+                asio::async_write(q.socket, asio::buffer(q.request), [&q, &out, i](std::error_code wec, std::size_t) {
+                    if (wec) return;
+                    asio::async_read(q.socket, asio::buffer(q.reply), [&q, &out, i](std::error_code rec, std::size_t) {
+                        if (rec) return;
+                        std::span<const std::uint8_t> all(q.reply);
+                        if (decodeHeader(all.first(kHeaderSize)) != Kind::Stats) return;
+                        auto m = decodeBody(Kind::Stats, all.subspan(kHeaderSize));
+                        if (m) out[i] = RelayCounters{m->statRooms, m->statPlayers};
+                    });
+                });
+            });
+        });
+    }
+    io.run_for(timeout);
+    for (auto& q : queries) {
+        std::error_code ec;
+        q->socket.close(ec);
+        q->resolver.cancel();
     }
     return out;
 }
