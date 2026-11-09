@@ -1,5 +1,5 @@
 #pragma once
-// Phase 1 networking probe: proves the core network stack (standalone Asio + NexLevel framing)
+// Startup networking self-check: proves the core network stack (standalone Asio + NexLevel framing)
 // works inside the host process on the current platform. Opens a TCP listener on 127.0.0.1
 // (ephemeral port), connects to it, sends one framed message and checks the echo.
 // Blocking: call it from a background thread, never from the game's main thread.

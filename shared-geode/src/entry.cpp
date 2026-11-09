@@ -18,7 +18,7 @@ $execute {
     log::info("NexLevel loaded: target {}, Geode major {}, protocol v{}",
         nexlevel::toString(target), NEXLEVEL_GEODE_MAJOR, nexlevel::kProtocolVersion);
 
-    // Phase 1 network probe, off the main thread (blocking by design, finishes in < 3 s).
+    // Network self-check, off the main thread (blocking by design, finishes in < 3 s).
     std::thread([] {
         auto r = nexlevel::net::runLoopbackProbe();
         if (r.ok) {

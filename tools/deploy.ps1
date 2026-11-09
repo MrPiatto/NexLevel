@@ -1,7 +1,7 @@
 # Copies a built target into a Geometry Dash install's geode/mods folder for in-game testing.
 # The only file written outside NEXLEVEL is the mod's own .geode file in that folder.
 param(
-    [Parameter(Mandatory)][ValidateSet('gd2207','gd2208','gd2209')][string]$Target,
+    [Parameter(Mandatory)][ValidateSet('gd2208','gd2209')][string]$Target,
     [Parameter(Mandatory)][string]$GdPath
 )
 $ErrorActionPreference = 'Stop'

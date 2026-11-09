@@ -2,7 +2,6 @@
 
 | Target | GD | Geode SDK (pinned) | Compat module | C++ | Status |
 | --- | --- | --- | --- | --- | --- |
-| gd2207 | 2.2074 | v4.10.2 | compat/gd2207-geode4 | 20 | SDK cloned, GD version confirmed in SDK; binaries + first build pending |
 | gd2208 | 2.2081 | v5.10.1 | compat/gd2208-geode5 | 23 | **NexLevel v1.0.0 target (Windows).** Builds and runs in game (GD 2.2081 + Geode 5.11.2). mod.json declares Windows only; Android/macOS/iOS stay off until tested. Release gate: docs/V1-TESTPLAN.md. |
 | gd2209 | 2.2091 | v6.0.0-alpha.1 | compat/gd2209-geode6 | 23 | SDK cloned, GD version confirmed in SDK; binaries + first build pending |
 

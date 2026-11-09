@@ -1,6 +1,6 @@
 #pragma once
 // NetId: session-wide object identity. GD's GameObject::m_uniqueID is runtime-only and changes across
-// undo/redo (seen in Phase 1 tests), so every synced object gets a NetId instead.
+// undo/redo (seen in early tests), so every synced object gets a NetId instead.
 // Layout: high 16 bits = author peer id, low 48 bits = per-peer counter. Peers mint ids without asking
 // the host, and ids from different peers can never collide.
 #include <compare>

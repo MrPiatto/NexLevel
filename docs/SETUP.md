@@ -13,7 +13,7 @@
 2. `tools/check-env.ps1` - everything should read OK.
 3. `tools/setup-sdks.ps1` - pinned Geode SDKs into deps/geode-sdk/.
 4. `tools/test-core.ps1` - core unit tests.
-5. `tools/build.ps1 -Target gd2208` (or gd2207 / gd2209) - output in build/out/<target>/.
+5. `tools/build.ps1 -Target gd2208` (gd2209 is the future GD 2.209 port) - output in build/out/<target>/.
 6. `tools/deploy.ps1 -Target gd2208 -GdPath "<Geometry Dash folder>"` - copies the .geode into that install's geode/mods.
 
 Each GD version needs its own Geometry Dash folder with the matching Geode installed.

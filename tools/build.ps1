@@ -1,7 +1,7 @@
 # Builds one target for Windows with Geode's documented command (geode build --ninja: Clang + Ninja),
 # then copies the .geode to NEXLEVEL/build/out/<target>/.
 param(
-    [Parameter(Mandatory)][ValidateSet('gd2207','gd2208','gd2209')][string]$Target
+    [Parameter(Mandatory)][ValidateSet('gd2208','gd2209')][string]$Target
 )
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/targets.ps1"

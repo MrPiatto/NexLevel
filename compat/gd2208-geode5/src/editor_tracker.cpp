@@ -1,5 +1,5 @@
 // GD 2.2081 / Geode v5 - editor adapter.
-// Detects local edits (Phase 1 tracker) and, while in a NexLevel session, turns them into ops;
+// Detects local edits and, while in a NexLevel session, turns them into ops;
 // applies remote changes to GD objects without re-sending them (m_applyingRemote guard).
 // Signatures copied from geode-sdk/bindings 2.2081/GeometryDash.bro.
 // Windows-inline (not hookable): EditorUI::deleteObject, LevelEditorLayer::undoLastAction/redoLastAction,

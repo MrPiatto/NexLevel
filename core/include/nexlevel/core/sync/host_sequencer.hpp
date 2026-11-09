@@ -36,7 +36,7 @@ private:
     Replica m_state;
     std::uint64_t m_nextSeq = 1;
     std::unordered_map<PeerId, std::uint32_t> m_highestClientSeq;
-    std::vector<Op> m_log;  // TODO(phase 5): trim behind periodic snapshots
+    std::vector<Op> m_log;  // every sequenced op (late joiners get a snapshot instead)
 };
 
 } // namespace nexlevel::sync

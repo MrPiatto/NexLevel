@@ -1,4 +1,4 @@
-# NexLevel - Phase 1 environment check (read-only; writes only tools/env-report.txt inside NEXLEVEL)
+# NexLevel - environment check (read-only; writes only tools/env-report.txt inside NEXLEVEL)
 $ErrorActionPreference = 'SilentlyContinue'
 $root = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $PSScriptRoot 'env-report.txt'
