@@ -120,6 +120,10 @@ isn't possible, traffic goes through a relay that only sees encrypted data.
 Found a bug or have an idea? Open an [issue](../../issues), and include your Geode log
 (`geode/logs`) if something broke.
 
+## 📄 License
+
+© 2026 Forg3 Studios. All rights reserved. See [`LICENSE`](LICENSE).
+
 <div align="center">
 
 Made with 💚 by **Forg3 Studios**
