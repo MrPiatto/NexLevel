@@ -4,6 +4,7 @@
 - Automatic reconnection, fast join of very large levels.
 - Watch others playtest live in your editor, with a trail in each player's colour.
 - Ping per player, ping in the editor, Info screen (connection, IP, port, internet quality, ping graph), GD profile buttons.
+- Host chooses: host the open level itself, or a copy "<name> (NL)" so the original stays untouched.
 - Autosave: the host's level is saved every 90 s while the room changes (also while the host is in the menus), when leaving the editor, when the room closes and when GD saves. Players get a backup copy "NL - <host>".
 - "Hosting NexLevel room" badge on every screen outside the editor; warning before closing GD while hosting.
 - Encrypted sessions; relay server support (any network, including mobile data); automatic router port opening (UPnP).

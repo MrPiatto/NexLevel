@@ -407,10 +407,20 @@ void NexMenu::onTab(CCObject* sender) {
 void NexMenu::onClose2(CCObject* sender) { this->onClose(sender); }
 
 void NexMenu::onHost(CCObject*) {
-    std::string err;
-    if (SessionManager::get()->hostRoom(&err)) notify("Room open - share the room code", NotificationIcon::Success);
-    else notify(err, NotificationIcon::Error);
-    buildTab();
+    // The host chooses what the others edit: this level itself, or a copy (original stays untouched).
+    Ref<NexMenu> self = this;
+    geode::createQuickPopup(
+        "Host which level?",
+        "<cg>This level</c>: everyone edits the level you have open.\n"
+        "<cy>A copy</c>: a new level <cy>\"name (NL)\"</c> is made and edited instead. Your original stays exactly as it is.",
+        "This level", "A copy", 340.f,
+        [self](FLAlertLayer*, bool copy) {
+            std::string err;
+            if (SessionManager::get()->hostRoom(&err, copy)) notify("Room open - share the room code", NotificationIcon::Success);
+            else notify(err, NotificationIcon::Error);
+            if (self->getParent()) self->buildTab();
+        },
+        true, true);  // Esc = cancel, no room
 }
 
 void NexMenu::onJoin(CCObject*) {

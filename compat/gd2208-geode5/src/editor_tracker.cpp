@@ -115,6 +115,8 @@ public:
     }
     LevelEditorLayer* layer() const { return m_layer; }
     GJGameLevel* level() const override { return m_layer->m_level; }
+    void switchLevel(GJGameLevel* level) override { m_layer->m_level = level; }
+    std::string levelString() const override { return std::string(m_layer->getLevelString()); }
 
     // ---------- local edit detection (ignored while applying remote changes) ----------
 

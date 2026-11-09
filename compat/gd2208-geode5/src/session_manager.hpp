@@ -30,6 +30,8 @@ public:
     virtual void rebuildFromSession() = 0;                             // replace editor content with session view
     virtual void seedSession() = 0;                                    // host: publish current editor content
     virtual GJGameLevel* level() const = 0;
+    virtual void switchLevel(GJGameLevel* level) = 0;                  // editor now saves into `level`
+    virtual std::string levelString() const = 0;                       // current editor content
 };
 
 class SessionManager : public cocos2d::CCObject {
@@ -39,7 +41,9 @@ public:
     Role role() const;
     bool inSession() const;  // host room open, or client joined
 
-    bool hostRoom(std::string* error);          // needs an attached editor
+    // Needs an attached editor. onCopy: the room runs on a new local copy of the open level
+    // ("<name> (NL)"), the original stays exactly as it was; otherwise on the open level itself.
+    bool hostRoom(std::string* error, bool onCopy = false);
     bool join(const std::string& roomCode, std::string* error = nullptr);  // false: cannot join (error says why)
     void leave();                               // client: leave; host: close the room
     bool kick(sync::PeerId peer);
@@ -95,6 +99,7 @@ public:
 
 private:
     void autosaveTick();
+    bool makeHostCopy(std::string* error);
     GJGameLevel* backupLevel();
     void ensureScheduled();
     void tick(float dt);

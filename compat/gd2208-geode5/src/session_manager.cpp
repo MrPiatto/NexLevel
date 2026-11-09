@@ -65,9 +65,10 @@ std::string SessionManager::displayName() const {
     return name.substr(0, session::kMaxDisplayName);
 }
 
-bool SessionManager::hostRoom(std::string* error) {
+bool SessionManager::hostRoom(std::string* error, bool onCopy) {
     if (role() != Role::None) { if (error) *error = "Already in a session"; return false; }
     if (!m_editor) { if (error) *error = "Open the editor first"; return false; }
+    if (onCopy && !makeHostCopy(error)) return false;
     auto host = std::make_unique<session::SessionHost>(static_cast<GameTarget>(NEXLEVEL_TARGET), displayName());
     host->setAccountId(static_cast<std::uint32_t>(std::max(0, GJAccountManager::sharedState()->m_accountID)));
     std::string err;
@@ -116,6 +117,29 @@ bool SessionManager::join(const std::string& roomCode, std::string* error) {
     m_client->connectCode(roomCode);
     ensureScheduled();
     log::info("NexLevel: joining room {}", roomCode);
+    return true;
+}
+
+// Copies the open level (content, settings, song, name, description) into a new local level and
+// points the editor at it: every save from now on (GD's own and NexLevel's autosave) goes to the copy.
+bool SessionManager::makeHostCopy(std::string* error) {
+    auto* original = m_editor->level();
+    auto* copy = GameLevelManager::sharedState()->createNewLevel();
+    if (!original || !copy) { if (error) *error = "Could not create the copy"; return false; }
+    std::string name = std::string(original->m_levelName);
+    if (name.size() > 15) name = name.substr(0, 15);
+    copy->m_levelName = name + " (NL)";
+    copy->m_levelDesc = original->m_levelDesc;
+    copy->m_audioTrack = original->m_audioTrack;
+    copy->m_songID = original->m_songID;
+    copy->m_songIDs = original->m_songIDs;
+    copy->m_sfxIDs = original->m_sfxIDs;
+    copy->m_levelString = ZipUtils::compressString(m_editor->levelString(), false, 0);
+    copy->retain();  // the editor now holds it
+    m_editor->switchLevel(copy);
+    LocalLevelManager::sharedState()->save();
+    log::info("NexLevel: hosting on a copy '{}' (original '{}' untouched)", std::string(copy->m_levelName), std::string(original->m_levelName));
+    notify("Hosting on a copy: \"" + std::string(copy->m_levelName) + "\" - your original is untouched", NotificationIcon::Info);
     return true;
 }
 

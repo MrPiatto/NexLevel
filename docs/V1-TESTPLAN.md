@@ -23,4 +23,5 @@ Nothing counts as supported until it passes here. Use `tools\bot.ps1` when there
 | 15 | Ping / Info | Collab menu with the bot in the room; press Info | ping shows in ms; graph moves; IP hidden until Show; profile button opens the GD profile |
 | 16 | Watch playtests | Player A playtests while B stays in the editor | B sees A's icon move (right mode: ship, ball...), a trail in A's colour that stays after A stops; a new test starts a new trail |
 | 17 | Everything syncs | Use undo/redo, copy/paste, duplicate, align, edit group, trigger settings, text objects, keyframes, select-all + move | the other player ends up with an identical level (also check after 10 s for sweep corrections in the log) |
+| 21 | Host on a copy | Host room -> "A copy", build with the bot, Save and Exit | a level "<name> (NL)" has everything; the original level is unchanged. "This level" edits the original. Esc on the question opens no room |
 | 14 | Real distance | A friend on another network (ideally mobile data) via relay | joins and edits |
