@@ -20,6 +20,7 @@ CCNode* findBadge() { return OverlayManager::get()->getChildByTag(kBadgeTag); }
 CCNode* createBadge() {
     auto* badge = CCNode::create();
     badge->setTag(kBadgeTag);
+    badge->setID("hosting-badge"_spr);
     badge->setContentSize({kW, kH});
     badge->setAnchorPoint({0.5f, 0.f});
     badge->setZOrder(1000);

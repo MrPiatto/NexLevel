@@ -26,6 +26,7 @@ void updatePingHud(CCNode* editorUI) {
     if (!hud) {
         hud = CCLabelBMFont::create("", "bigFont.fnt");
         hud->setTag(kHudTag);
+        hud->setID("ping-label"_spr);
         hud->setScale(.3f);
         hud->setAnchorPoint({.5f, 1.f});
         const auto win = CCDirector::sharedDirector()->getWinSize();

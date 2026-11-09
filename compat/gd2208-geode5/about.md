@@ -5,35 +5,32 @@
 Build Geometry Dash levels with your friends in real time, in the same editor.
 
 ## How to play
-1. Open a level in the editor and press **Esc**.
-2. Press **NexLevel Collab**, then **Host room**. Copy the code and send it to your friends.
-3. Your friends open any level in the editor, press **Esc**, **NexLevel Collab**, paste the code and press **Join**.
+- **Host:** open a level in the editor, press **Esc** > **NexLevel Collab** > **Host room** (this level or a safe copy). Copy the code and send it to your friends.
+- **Join:** tap the **NexLevel logo** at the top right of the main menu, paste the code and press **Join**. The room opens in a new level, your own levels are never touched.
 
 No IP addresses, no router settings.
 
 ## What is shared
 - **Every object:** placing, moving, rotating, scaling, colouring and deleting.
 - **Level settings:** colour channels, background, ground, fonts, start options, guidelines and the song.
-- **Everyone's view:** a coloured frame with each player's name shows where they are working.
-- **Playtests:** when someone playtests, the others watch their icon play right in the editor. Each test leaves a trail in that player's colour.
+- **Everyone's view:** a thin coloured outline with each player's name shows where they are working.
+- **Playtests:** when someone playtests, the others watch their icon play right in the editor, with a trail in that player's colour.
 
 ## The NexLevel menu
-One modern panel with four tabs: **Room** (code, players, objects, uptime), **Players** (ping bars, profiles, kick), **Network** (internet quality gauge, live ping chart, connection details) and **Settings**.
-
-## Connection
-- Each player's ping is listed in the Players tab, with a button to open their GD profile.
-- Your own ping is shown in the editor. You can turn it off in the mod settings.
-- **Network** shows how you are connected, your IP (hidden until you tap Show), the port and your internet quality: Demon, Insane, High, Normal or Bad. A live ping graph covers the last minute.
+Tabs: **Room** (code, players, objects, uptime, restore points), **Players** (ping, profiles, Go to player, view-only, kick), **Chat**, **Network** (connection quality, live ping chart) and **Settings**.
 
 ## Rooms
-- Up to 16 players.
+- Up to 16 players. The host can kick players, make them view-only and close the room.
 - If the host leaves the editor, the room stays open and everyone keeps building.
-- The host can kick players and close the room.
-- Players whose connection drops reconnect on their own, without losing their work.
+- Dropped connections reconnect on their own, without losing work.
+- Autosave while the room changes; players keep a backup copy; restore points every 10 minutes.
 
-## Online play
-- With a relay server set in the mod settings, rooms work from any network, including mobile data.
-- Without one, NexLevel opens your router automatically (UPnP), or you can play on the same Wi-Fi.
-- All traffic is encrypted.
+## Privacy and online connections
+NexLevel does **not** collect, upload or sell any data, and has no analytics.
+- **Who sees what:** the people in your room see your GD username, your GD account ID (for the profile button), where you are looking in the editor, your playtest icon and your chat messages. Nothing is shared outside your room.
+- **Relay servers:** to work on any network (including mobile data), rooms go through a Forg3 Studios relay server (official list, or your own one set in the settings). The relay only forwards **encrypted** data: it cannot read levels, names or chat. Like any server, it sees your IP address to connect you; it keeps only connection counts, no logs of IPs.
+- **Direct connections:** without a relay, players connect to the host directly (UPnP or same Wi-Fi), so the host's and players' IPs are visible to each other's computers, as in any online game. Your IP is hidden in the menu until you tap Show.
+- **Encryption:** all room traffic is end-to-end encrypted (X25519 + XChaCha20-Poly1305).
+- **Local files only:** settings, autosaves and restore points are saved on your PC.
 
-Everyone in a room needs the same Geometry Dash version. The level stays saved on the host's PC.
+Everyone in a room needs the same Geometry Dash and NexLevel version.

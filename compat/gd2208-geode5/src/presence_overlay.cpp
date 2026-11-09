@@ -227,6 +227,7 @@ void updatePresence(LevelEditorLayer* layer, bool paused) {
         overlay = PresenceOverlay::create();
         if (!overlay) return;
         overlay->setTag(kOverlayTag);
+        overlay->setID("presence-overlay"_spr);
         objectLayer->addChild(overlay, 10000);
     }
     // While this player is playtesting the overlay is hidden; everyone else's view keeps updating.
