@@ -13,6 +13,7 @@
 #include <nexlevel/core/sync/object_props.hpp>
 
 #include "level_settings_adapter.hpp"
+#include "nexmenu.hpp"
 #include "ping_hud.hpp"
 #include "presence_overlay.hpp"
 #include "session_manager.hpp"
@@ -55,6 +56,18 @@ int g_editorTouches = 0;
 // dragging and swiping until the gesture ends, so remote changes that remove or replace objects
 // must wait until then (doing it mid-gesture corrupts the heap), and local changes are sent as
 // one batch when the gesture ends.
+// Any GD popup open over the editor (trigger settings, Edit Object, colour picker, group IDs...)
+// keeps pointers to the objects it edits until it closes. NexLevel's own menu doesn't count.
+bool editPopupOpen() {
+    auto* scene = CCDirector::sharedDirector()->getRunningScene();
+    if (!scene) return false;
+    for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
+        if (!child || !child->isVisible()) continue;
+        if (typeinfo_cast<FLAlertLayer*>(child) && !typeinfo_cast<nexlevel::mod::NexMenu*>(child)) return true;
+    }
+    return false;
+}
+
 bool editorBusy(EditorUI* ui) {
     if (g_editorTouches > 0) return true;
     if (ui && ui->m_swipeActive) return true;
@@ -259,7 +272,7 @@ public:
         const bool wasBusy = m_busy;
         m_busy = editorBusy(EditorUI::get());
         // Safety net: a touch-end or key-up that never arrives (focus lost mid-gesture) must not
-        // hold the room back forever.
+        // hold the room back forever. (An open popup has no time limit: it really is in use.)
         if (m_busy) {
             if (!wasBusy) m_busySince = std::chrono::steady_clock::now();
             else if (std::chrono::steady_clock::now() - m_busySince > std::chrono::seconds(30)) {
@@ -268,6 +281,7 @@ public:
                 m_busy = false;
             }
         }
+        if (editPopupOpen()) m_busy = true;
         if (wasBusy && !m_busy) flushOutbox();  // before this frame's own changes, to keep the order
         playtestTick();  // rate limited to ~30/s inside
         if (!ignoring()) {
@@ -385,7 +399,10 @@ public:
         std::vector<GameObject*> existing;
         forEachLevelObject([&](GameObject* o) { existing.push_back(o); });
         if (auto* ui = EditorUI::get()) ui->deselectAll();  // no selection may point at removed objects
-        for (auto* o : existing) m_layer->removeObject(o, true);
+        for (auto* o : existing) {
+            releaseFromEditor(o);
+            m_layer->removeObject(o, true);
+        }
         // Old undo/redo entries point at objects that are no longer part of the shared level.
         if (m_layer->m_undoObjects) m_layer->m_undoObjects->removeAllObjects();
         if (m_layer->m_redoObjects) m_layer->m_redoObjects->removeAllObjects();
@@ -514,7 +531,10 @@ private:
             }
             log::warn("NexLevel: batch spawn created {} of {} objects, retrying one by one", objs ? objs->count() : 0, end - start);
             if (objs) {
-                for (auto* o : CCArrayExt<GameObject*>(objs)) m_layer->removeObject(o, true);
+                for (auto* o : CCArrayExt<GameObject*>(objs)) {
+                    releaseFromEditor(o);
+                    m_layer->removeObject(o, true);
+                }
             }
             for (std::size_t i = start; i < end; ++i) spawn(todo[i].first, *todo[i].second);
         }
@@ -585,9 +605,15 @@ private:
     }
     // The editor UI keeps raw pointers to the selection: an object removed by a remote change must
     // leave the selection first, or the next frame touches a freed object.
+    // Also leave its linked (sticky) group, like GD's own delete does (EditorUI::deleteTypeFromObjects).
     void releaseFromEditor(GameObject* o) {
-        if (!o || !o->m_isSelected) return;
-        if (auto* ui = EditorUI::get()) ui->deselectObject(o);
+        if (!o) return;
+        if (o->m_isSelected) {
+            if (auto* ui = EditorUI::get()) ui->deselectObject(o);
+        }
+        if (o->m_linkedGroup > 0) {
+            if (auto* group = m_layer->getStickyGroup(o->m_linkedGroup)) group->removeObject(o, true);
+        }
     }
     // unmap/forget may drop the last reference: callers must not use `o` afterwards except as a key.
     void unmap(GameObject* o) {

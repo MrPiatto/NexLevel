@@ -2,7 +2,9 @@
 - Fixed a crash (heap corruption) when another player's change arrived while you were building, especially with Shift held (continuous building), swiping or dragging. Their changes now apply as soon as you let go, and what you build during the gesture is sent in one go when you release.
 - Fixed a crash when another player deleted an object you had selected.
 - Hardening against crashes: NexLevel now keeps its own reference to every object it tracks (no stale pointers, whatever way GD deletes objects), skips objects GD cannot build, and only shows game modes and icons that exist in your game when watching playtests.
-- Other players' view is now shown as an outline only (no tint over the level).
+- While any editor popup is open (trigger settings, Edit Object, colours, group IDs...), other players' changes that would replace or delete objects wait until it closes, and your edits from the popup are sent when you close it.
+- Objects in a linked group are taken out of the group properly when another player deletes or changes them.
+- Other players' view is now a thin outline only (no tint over the level).
 
 # v1.0.0 - first release
 - Real-time collaborative editing: objects, level settings (colours, background, ground, song, start options) and live presence.
