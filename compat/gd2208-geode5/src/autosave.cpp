@@ -20,6 +20,9 @@ namespace nexlevel::mod {
 namespace {
 
 constexpr auto kInterval = std::chrono::seconds(90);
+constexpr auto kIntervalBig = std::chrono::minutes(5);  // huge levels: each save takes a while
+constexpr std::size_t kBigLevelBytes = 4u << 20;
+std::size_t g_lastSaveBytes = 0;
 bool g_saving = false;
 
 std::string plainLevelString(const gd::string& stored) {
@@ -96,12 +99,14 @@ void SessionManager::saveNow(bool toDisk, const char* reason) {
     if (toDisk) LocalLevelManager::sharedState()->save();
     m_roomDirty = false;
     m_lastSave = std::chrono::steady_clock::now();
+    g_lastSaveBytes = str.size();
     log::info("NexLevel: autosaved '{}' ({}, {} bytes)", std::string(target->m_levelName), reason, str.size());
 }
 
 void SessionManager::autosaveTick() {
     if (!m_roomDirty || !inSession()) return;
-    if (std::chrono::steady_clock::now() - m_lastSave < kInterval) return;
+    const auto interval = g_lastSaveBytes > kBigLevelBytes ? std::chrono::duration_cast<std::chrono::seconds>(kIntervalBig) : kInterval;
+    if (std::chrono::steady_clock::now() - m_lastSave < interval) return;
     saveNow(true, "autosave");
 }
 

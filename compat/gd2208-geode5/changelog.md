@@ -3,6 +3,9 @@
 - While any editor popup is open (trigger settings, Edit Object, colours, group IDs...), other players' changes that would replace or delete objects wait until it closes, and your edits from the popup are sent when you close it.
 - Hardening against crashes: NexLevel keeps its own reference to every object it tracks (no stale pointers, whatever way GD deletes objects), skips objects GD cannot build, and only shows game modes and icons that exist in your game when watching playtests.
 - Objects in a linked group are taken out of the group properly when another player deletes or changes them.
+- Teleport portals: the exit portal is now handled together with its entry portal. Before, syncing it on its own could crash, and made GD create extra exit portals that piled up in the level.
+- Fixed a crash when the host went back into the editor while the room was open.
+- Huge levels autosave every 5 minutes instead of 90 seconds (each save of a very big level takes a moment).
 - Thinner outline for other players' view.
 
 # v1.0.1

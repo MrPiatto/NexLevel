@@ -34,8 +34,19 @@ namespace {
 
 constexpr std::size_t kMaxLogLinesPerKind = 20;  // per tick, so a big paste can't flood the log
 
+// The exit (yellow) half of a teleport portal (object 749) is owned by its entry portal (747):
+// GD creates and deletes it together with the entry, and the entry keeps a pointer to it
+// (TeleportPortalObject::m_orangePortal). NexLevel syncs only the entry; touching the exit on its
+// own breaks that link, makes GD create another exit, and can crash.
+bool isPortalCompanion(CCNode* node) {
+    auto* tp = typeinfo_cast<TeleportPortalObject*>(node);
+    return tp && tp->m_isYellowPortal;
+}
+
 // Editor UI previews (build tab buttons) are GameObjects too; they live under EditorUI, not in the level.
+// Companion objects GD manages itself are treated the same way: never synced on their own.
 bool isUnderEditorUI(CCNode* node) {
+    if (isPortalCompanion(node)) return true;
     for (auto* n = node ? node->getParent() : nullptr; n; n = n->getParent()) {
         if (typeinfo_cast<EditorUI*>(n)) return true;
     }
@@ -154,10 +165,35 @@ public:
 
     void snapshotIfUnknown(GameObject* o) {
         if (!o || ignoring() || m_cache.contains(o)) return;
+        if (isUnderEditorUI(o)) {
+            if (isPortalCompanion(o)) markEntryOf(o);
+            return;
+        }
         cachePut(o, read(o));
     }
     void markDirty(GameObject* o) {
-        if (o && !ignoring()) m_dirty.insert(o);
+        if (!o || ignoring()) return;
+        if (isPortalCompanion(o)) { markEntryOf(o); return; }
+        m_dirty.insert(o);
+    }
+    // The entry portal whose exit this is (its save string holds the exit's offset).
+    void markEntryOf(GameObject* exit) {
+        if (auto it = m_portalEntry.find(exit); it != m_portalEntry.end() && m_cache.contains(it->second)) {
+            auto* tp = typeinfo_cast<TeleportPortalObject*>(it->second);
+            if (tp && tp->m_orangePortal == exit) {
+                m_dirty.insert(it->second);
+                return;
+            }
+            m_portalEntry.erase(it);
+        }
+        for (auto& [o, _] : m_cache) {
+            auto* tp = o->m_objectID == 747 ? typeinfo_cast<TeleportPortalObject*>(o) : nullptr;
+            if (tp && tp->m_orangePortal == exit) {
+                m_portalEntry[exit] = o;
+                m_dirty.insert(o);
+                return;
+            }
+        }
     }
     void markAllDirty() {
         if (ignoring()) return;
@@ -172,7 +208,7 @@ public:
 
     // Idempotent: createObject also goes through addToSection, so a known object is ignored.
     void onCreated(GameObject* o, const char* via) {
-        if (!o || ignoring() || !m_armed || m_cache.contains(o)) return;
+        if (!o || ignoring() || !m_armed || m_cache.contains(o) || isUnderEditorUI(o)) return;
         auto props = read(o);
         if (m_createdLogged++ < kMaxLogLinesPerKind) {
             log::debug("NexLevel diff: created uid={} id={} ({} props, via {})", o->m_uniqueID, o->m_objectID, props.size(), via);
@@ -399,10 +435,11 @@ public:
         std::vector<GameObject*> existing;
         forEachLevelObject([&](GameObject* o) { existing.push_back(o); });
         if (auto* ui = EditorUI::get()) ui->deselectAll();  // no selection may point at removed objects
+        for (auto* o : existing) o->retain();  // removing an entry portal may remove its exit too
         for (auto* o : existing) {
-            releaseFromEditor(o);
-            m_layer->removeObject(o, true);
+            if (o->getParent()) removeForRemote(o);
         }
+        for (auto* o : existing) o->release();
         // Old undo/redo entries point at objects that are no longer part of the shared level.
         if (m_layer->m_undoObjects) m_layer->m_undoObjects->removeAllObjects();
         if (m_layer->m_redoObjects) m_layer->m_redoObjects->removeAllObjects();
@@ -439,8 +476,7 @@ public:
             if (!state) {
                 if (obj) {
                     log::debug("NexLevel trace: delete {} (obj id {})", id.value, obj->m_objectID);
-                    releaseFromEditor(obj);
-                    m_layer->removeObject(obj, true);  // our references keep it alive until unmap/forget
+                    removeForRemote(obj);  // our references keep it alive until unmap/forget
                     unmap(obj);
                     forget(obj);
                 }
@@ -457,8 +493,7 @@ public:
                 continue;
             }
             log::debug("NexLevel trace: replace {} (obj id {})", id.value, obj->m_objectID);
-            releaseFromEditor(obj);
-            m_layer->removeObject(obj, true);
+            removeForRemote(obj);
             unmap(obj);
             forget(obj);
             spawn(id, state->props);
@@ -487,7 +522,7 @@ private:
         if (it == props.end()) return false;
         int objectId = 0;
         try { objectId = std::stoi(it->second); } catch (...) { return false; }
-        return objectId > 0 && objectId < 10000;
+        return objectId > 0 && objectId < 10000 && objectId != 749;  // 749: portal exit, created by its 747
     }
 
     void spawn(nls::NetId id, const nls::PropMap& props) {
@@ -602,10 +637,27 @@ private:
         m_objToId.clear();
         m_idToObj.clear();
         m_cache.clear();
+        m_portalEntry.clear();
     }
     // The editor UI keeps raw pointers to the selection: an object removed by a remote change must
     // leave the selection first, or the next frame touches a freed object.
     // Also leave its linked (sticky) group, like GD's own delete does (EditorUI::deleteTypeFromObjects).
+    // Removes an object for a remote change. A teleport entry takes its exit with it (if GD didn't).
+    void removeForRemote(GameObject* o) {
+        GameObject* exit = nullptr;
+        if (auto* tp = typeinfo_cast<TeleportPortalObject*>(o); tp && !tp->m_isYellowPortal && tp->m_orangePortal) {
+            exit = tp->m_orangePortal;
+            exit->retain();
+            releaseFromEditor(exit);
+        }
+        releaseFromEditor(o);
+        m_layer->removeObject(o, true);
+        if (exit) {
+            if (exit->getParent()) m_layer->removeObject(exit, true);
+            exit->release();
+        }
+    }
+
     void releaseFromEditor(GameObject* o) {
         if (!o) return;
         if (o->m_isSelected) {
@@ -673,6 +725,7 @@ private:
     bool m_paused = false;
     bool m_armed = false;
     bool m_applyingRemote = false;
+    std::unordered_map<GameObject*, GameObject*> m_portalEntry;  // exit -> entry (lookup cache)
     bool m_busy = false;              // local gesture in progress (editorBusy)
     std::vector<nls::Op> m_outbox;    // local ops held during the gesture
     std::chrono::steady_clock::time_point m_busySince{};
