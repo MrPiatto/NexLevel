@@ -31,6 +31,7 @@ NexLevel does **not** collect, upload or sell any data, and has no analytics.
 - **Relay servers:** to work on any network (including mobile data), rooms go through a Forg3 Studios relay server (official list, or your own one set in the settings). The relay only forwards **encrypted** data: it cannot read levels, names or chat. Like any server, it sees your IP address to connect you; IPs are used only in memory for anti-abuse limits and are never logged or stored; the relay log has connection counts only.
 - **Direct connections:** without a relay, players connect to the host directly (UPnP or same Wi-Fi), so the host's and players' IPs are visible to each other's computers, as in any online game. Your IP is hidden in the menu until you tap Show.
 - **Encryption:** all room traffic is end-to-end encrypted (X25519 + XChaCha20-Poly1305).
+- **Update check:** at startup NexLevel asks GitHub for the latest official release (can be turned off in the settings). Nothing about you is sent.
 - **Local files only:** settings and the host's autosaves are saved on the host's PC.
 
 Everyone in a room needs the same Geometry Dash and NexLevel version.

@@ -23,6 +23,12 @@
 			"default": "",
 			"filter": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:"
 		},
+		"check-updates": {
+			"type": "bool",
+			"name": "Check for updates",
+			"description": "At startup, check the official NexLevel releases and offer to install a newer version (rooms need everyone on the same version).",
+			"default": true
+		},
 		"show-ping": {
 			"type": "bool",
 			"name": "Show ping in the editor",

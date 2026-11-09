@@ -1,4 +1,6 @@
 # v1.0.4
+- Update notice: at startup NexLevel checks the official releases; if a newer version is out it shows what's new and installs it with one button, then restarts the game (3... 2... 1...).
+- Welcome screen with the changelog the first time a new version starts.
 - Everything is saved into the host's level itself: no more restore-point copies ("CP 18:40") or extra backup levels in My Levels.
 - The room stays the host's: players never get a saved copy. Saving is disabled in a player's editor while it shows someone's room (their own level stays as it was), the level used to join from the main menu is deleted when they leave, and the editor clipboard is cleared when a room ends.
 - New mod page: how to host and join, all features, and a "Privacy and online connections" section that explains exactly what other players and the relay can see (no data is collected).
