@@ -12,7 +12,7 @@
 #include <windows.h>
 #include <bcrypt.h>
 #elif defined(__APPLE__)
-#include <unistd.h>  // getentropy (macOS / iOS have no getrandom)
+#include <stdlib.h>  // arc4random_buf (macOS / iOS have no getrandom)
 #else
 #include <sys/random.h>
 #endif
@@ -23,12 +23,7 @@ bool secureRandom(std::span<std::uint8_t> out) noexcept {
 #ifdef _WIN32
     return BCryptGenRandom(nullptr, out.data(), static_cast<ULONG>(out.size()), BCRYPT_USE_SYSTEM_PREFERRED_RNG) >= 0;
 #elif defined(__APPLE__)
-    std::size_t done = 0;
-    while (done < out.size()) {
-        const std::size_t chunk = std::min<std::size_t>(256, out.size() - done);  // getentropy limit
-        if (getentropy(out.data() + done, chunk) != 0) return false;
-        done += chunk;
-    }
+    arc4random_buf(out.data(), out.size());  // system CSPRNG, cannot fail
     return true;
 #else
     std::size_t done = 0;
