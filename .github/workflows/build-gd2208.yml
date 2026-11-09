@@ -10,11 +10,8 @@ jobs:
       fail-fast: false
       matrix:
         config:
+          # v1 targets Windows only (mod.json "gd": {"win": ...}). Add platforms here once supported.
           - { name: Windows,   os: windows-latest }
-          - { name: macOS,     os: macos-latest }
-          - { name: iOS,       os: macos-latest,  target: iOS }
-          - { name: Android32, os: ubuntu-latest, target: Android32 }
-          - { name: Android64, os: ubuntu-latest, target: Android64 }
     name: ${{ matrix.config.name }}
     runs-on: ${{ matrix.config.os }}
     steps:
@@ -23,8 +20,6 @@ jobs:
         uses: geode-sdk/build-geode-mod@main
         with:
           path: compat/gd2208-geode5
-          # PHASE 1 CHECK: the action documents only 'latest' / 'nightly'. Confirm a tag pin works;
-          # if not, replace with explicit steps that clone geode-sdk/geode at this tag.
           sdk: v5.10.1
           combine: true
           target: ${{ matrix.config.target }}
