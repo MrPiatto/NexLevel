@@ -14,6 +14,9 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+#include <cstddef>
+#include <system_error>
+#include <utility>
 
 namespace nexlevel::net {
 

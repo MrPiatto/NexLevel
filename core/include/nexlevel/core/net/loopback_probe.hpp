@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include <string>
+#include <cstddef>
 
 namespace nexlevel::net {
 

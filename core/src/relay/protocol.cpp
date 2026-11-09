@@ -84,6 +84,8 @@ std::optional<Message> decodeBody(Kind k, std::span<const std::uint8_t> body) {
 } // namespace nexlevel::relay
 
 #include <asio.hpp>
+#include <memory>
+#include <system_error>
 
 namespace nexlevel::relay {
 

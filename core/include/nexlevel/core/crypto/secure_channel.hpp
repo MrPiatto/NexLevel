@@ -18,6 +18,7 @@
 #include <optional>
 #include <span>
 #include <vector>
+#include <cstddef>
 
 namespace nexlevel::crypto {
 

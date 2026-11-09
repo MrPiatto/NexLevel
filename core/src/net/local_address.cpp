@@ -1,6 +1,7 @@
 #include <nexlevel/core/net/local_address.hpp>
 
 #include <asio.hpp>
+#include <system_error>
 
 namespace nexlevel::net {
 

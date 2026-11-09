@@ -12,6 +12,7 @@
 #include <chrono>
 #include <future>
 #include <set>
+#include <system_error>
 
 namespace nexlevel::session {
 

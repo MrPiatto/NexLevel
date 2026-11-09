@@ -1,4 +1,4 @@
-# NexLevel build for GD 2.2081 (Geode v5). One workflow per target so the combine step only merges this target's platforms.
+# NexLevel build for GD 2.2081 (Geode v5). v1 targets Windows only (mod.json "gd": {"win": ...}).
 name: Build GD 2.2081 (Geode v5)
 on:
   push:
@@ -6,31 +6,19 @@ on:
   workflow_dispatch:
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        config:
-          # v1 targets Windows only (mod.json "gd": {"win": ...}). Add platforms here once supported.
-          - { name: Windows,   os: windows-latest }
-    name: ${{ matrix.config.name }}
-    runs-on: ${{ matrix.config.os }}
+    name: Windows
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: Build
+        id: build
         uses: geode-sdk/build-geode-mod@main
         with:
           path: compat/gd2208-geode5
           sdk: v5.10.1
-          combine: true
-          target: ${{ matrix.config.target }}
-  package:
-    name: Package GD 2.2081 (Geode v5)
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: geode-sdk/build-geode-mod@combine
-        id: build
-      - uses: actions/upload-artifact@v4
+          combine: false
+      - name: Upload .geode
+        uses: actions/upload-artifact@v4
         with:
           name: nexlevel-gd2208
           path: ${{ steps.build.outputs.build-output }}

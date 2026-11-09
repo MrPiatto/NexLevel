@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <cstddef>
 
 namespace nexlevel::relay {
 

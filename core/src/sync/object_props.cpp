@@ -1,6 +1,7 @@
 #include <nexlevel/core/sync/object_props.hpp>
 
 #include <charconv>
+#include <system_error>
 
 namespace nexlevel::sync {
 

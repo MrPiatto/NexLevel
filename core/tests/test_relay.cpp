@@ -14,6 +14,7 @@
 #include <functional>
 #include <memory>
 #include <thread>
+#include <system_error>
 
 using namespace nexlevel;
 using namespace nexlevel::session;

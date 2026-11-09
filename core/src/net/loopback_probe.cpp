@@ -8,6 +8,9 @@
 #include <array>
 #include <functional>
 #include <vector>
+#include <cstddef>
+#include <system_error>
+#include <utility>
 
 namespace nexlevel::net {
 

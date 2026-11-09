@@ -11,6 +11,9 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <cstddef>
+#include <system_error>
+#include <utility>
 
 namespace nexlevel::relay {
 

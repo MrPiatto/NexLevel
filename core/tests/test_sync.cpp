@@ -10,6 +10,7 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 using namespace nexlevel;
 using namespace nexlevel::sync;

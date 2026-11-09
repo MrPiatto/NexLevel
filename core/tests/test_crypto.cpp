@@ -15,6 +15,7 @@
 #include <cstring>
 #include <string>
 #include <thread>
+#include <system_error>
 
 using namespace nexlevel;
 

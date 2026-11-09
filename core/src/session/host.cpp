@@ -16,6 +16,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <system_error>
 
 namespace nexlevel::session {
 

@@ -17,6 +17,7 @@
 #include <regex>
 #include <set>
 #include <thread>
+#include <system_error>
 
 using namespace nexlevel;
 using asio::ip::tcp;

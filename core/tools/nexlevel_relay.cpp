@@ -18,6 +18,7 @@
 #include <ctime>
 #include <string>
 #include <thread>
+#include <cstddef>
 
 namespace {
 std::atomic<bool> g_stop{false};

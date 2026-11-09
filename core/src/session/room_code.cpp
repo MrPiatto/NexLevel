@@ -1,6 +1,7 @@
 #include <nexlevel/core/session/room_code.hpp>
 
 #include <vector>
+#include <cstddef>
 
 namespace nexlevel::session {
 

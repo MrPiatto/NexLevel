@@ -2,6 +2,7 @@
 
 #include <charconv>
 #include <map>
+#include <system_error>
 
 namespace nexlevel::sync {
 
