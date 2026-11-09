@@ -1,9 +1,12 @@
-# v1.0.4
+# v1.0.5
 - Main-menu NexLevel menu shows live community numbers: players online and rooms open on the official relays, and total downloads.
 - Update notice: at startup NexLevel checks the official releases; if a newer version is out it shows what's new and installs it with one button, then restarts the game (3... 2... 1...).
 - Welcome screen with the changelog the first time a new version starts.
 - Everything is saved into the host's level itself: no more restore-point copies ("CP 18:40") or extra backup levels in My Levels.
 - The room stays the host's: players never get a saved copy. Saving is disabled in a player's editor while it shows someone's room (their own level stays as it was), the level used to join from the main menu is deleted when they leave, and the editor clipboard is cleared when a room ends.
+- Works with rooms of v1.0.3 and v1.0.4 (same protocol). Update the relay server to see live players and rooms.
+
+# v1.0.4
 - New mod page: how to host and join, all features, and a "Privacy and online connections" section that explains exactly what other players and the relay can see (no data is collected).
 - Node IDs (with the mod prefix) for the hosting badge, the editor ping label and the players overlay (better compatibility with other mods).
 - Works with rooms of v1.0.3 (same protocol).
