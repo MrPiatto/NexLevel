@@ -1,3 +1,7 @@
+# v1.0.1
+- Fixed a crash when another player deleted an object you had selected.
+- Other players' view is now shown as an outline only (no tint over the level).
+
 # v1.0.0 - first release
 - Real-time collaborative editing: objects, level settings (colours, background, ground, song, start options) and live presence.
 - Rooms with short codes, up to 16 players, kick, close room, room stays open when the host leaves the editor.

@@ -354,6 +354,7 @@ public:
         RemoteScope scope(*this);
         std::vector<GameObject*> existing;
         forEachLevelObject([&](GameObject* o) { existing.push_back(o); });
+        if (auto* ui = EditorUI::get()) ui->deselectAll();  // no selection may point at removed objects
         for (auto* o : existing) m_layer->removeObject(o, true);
         // Old undo/redo entries point at objects that are no longer part of the shared level.
         if (m_layer->m_undoObjects) m_layer->m_undoObjects->removeAllObjects();
@@ -379,6 +380,7 @@ public:
         log::debug("NexLevel: applying {} remote change(s)", ids.size());
         for (auto id : ids) {
             if (nls::isLevelSettings(id)) {  // not a GameObject: level-wide settings
+                log::debug("NexLevel trace: level settings update");
                 if (view->find(id)) applySettingsFromView(*view);
                 continue;
             }
@@ -387,8 +389,10 @@ public:
             GameObject* obj = it == m_idToObj.end() ? nullptr : it->second;
             if (!state) {
                 if (obj) {
+                    log::debug("NexLevel trace: delete {} (obj id {})", id.value, obj->m_objectID);
                     unmap(obj);
                     forget(obj);
+                    releaseFromEditor(obj);
                     m_layer->removeObject(obj, true);
                 }
                 continue;
@@ -406,6 +410,7 @@ public:
             log::debug("NexLevel trace: replace {} (obj id {})", id.value, obj->m_objectID);
             unmap(obj);
             forget(obj);
+            releaseFromEditor(obj);
             m_layer->removeObject(obj, true);
             spawn(id, state->props);
             log::debug("NexLevel trace: replaced {}", id.value);
@@ -493,6 +498,12 @@ private:
     void map(GameObject* o, nls::NetId id) {
         m_objToId[o] = id;
         m_idToObj[id] = o;
+    }
+    // The editor UI keeps raw pointers to the selection: an object removed by a remote change must
+    // leave the selection first, or the next frame touches a freed object.
+    void releaseFromEditor(GameObject* o) {
+        if (!o || !o->m_isSelected) return;
+        if (auto* ui = EditorUI::get()) ui->deselectObject(o);
     }
     void unmap(GameObject* o) {
         if (auto it = m_objToId.find(o); it != m_objToId.end()) {

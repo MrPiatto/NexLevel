@@ -164,7 +164,7 @@ public:
             CCPoint verts[4] = {{s.x - hw, s.y - hh}, {s.x + hw, s.y - hh}, {s.x + hw, s.y + hh}, {s.x - hw, s.y + hh}};
             const auto c = colorFor(p.peer);
             ccColor4F border{c.r / 255.f, c.g / 255.f, c.b / 255.f, .9f};
-            ccColor4F fill{c.r / 255.f, c.g / 255.f, c.b / 255.f, .05f};
+            ccColor4F fill{0.f, 0.f, 0.f, 0.f};  // outline only: the view itself stays clear
             m_draw->drawPolygon(verts, 4, fill, 1.5f / myZoom, border);
 
             auto*& label = m_labels[p.peer];
