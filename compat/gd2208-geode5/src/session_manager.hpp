@@ -47,8 +47,8 @@ public:
     // ("<name> (NL)"), the original stays exactly as it was; otherwise on the open level itself.
     bool hostRoom(std::string* error, bool onCopy = false);
     bool join(const std::string& roomCode, std::string* error = nullptr);  // false: cannot join (error says why)
-    // From the main menu: joins, then makes one local level "NL - <host>" holding the room (
-    // in) and opens the editor on it. The player's own levels are never touched.
+    // From the main menu: joins, then makes one local level "NL - <host>" holding the room
+    // and opens the editor on it. The player's own levels are never touched.
     bool joinFromMenu(const std::string& roomCode, std::string* error = nullptr);
     void leave();                               // client: leave; host: close the room
     bool kick(sync::PeerId peer);
