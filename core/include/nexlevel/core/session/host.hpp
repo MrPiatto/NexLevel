@@ -62,6 +62,8 @@ public:
     void setAccountId(std::uint32_t accountId);
     // A player's round-trip time to the host (nullopt if not in the room).
     std::optional<PingStats> pingStats(sync::PeerId peer) const;
+    // The host's own round trip to its relay (nullopt when the room is not on a relay).
+    std::optional<PingStats> relayPingStats() const;
 
     // Playtest spectating: send this player's icon while testing (rate limited inside);
     // the others' icons and trails.

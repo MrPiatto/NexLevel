@@ -13,6 +13,7 @@
 #include <chrono>
 #include <future>
 #include <map>
+#include <deque>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -120,6 +121,10 @@ struct SessionHost::Impl {
     std::shared_ptr<tcp::socket> relaySock;
     std::optional<asio::steady_timer> relayRetry;
     std::optional<asio::steady_timer> relayPing;
+    // Host's own round trip to the relay (keepalive pings on the control connection, every second).
+    mutable std::mutex relayRttMutex;
+    RttTracker relayRtt;
+    std::deque<std::uint32_t> relayPingSeqs;
     std::atomic<RelayState> relayStateA{RelayState::Off};
     std::atomic<std::uint32_t> relayRoomA{0};
     std::uint8_t relayIdValue = 0;  // main thread
@@ -174,7 +179,15 @@ struct SessionHost::Impl {
                         schedulePing(gen, sock);
                         break;
                     case relay::Kind::Incoming: openRelayData(msg->stream); break;
-                    case relay::Kind::Pong: break;
+                    case relay::Kind::Pong: {
+                        std::lock_guard lk(relayRttMutex);
+                        if (!relayPingSeqs.empty()) {
+                            const auto seq = relayPingSeqs.front();
+                            relayPingSeqs.pop_front();
+                            relayRtt.onPong(Pong{seq, 0, 0}, std::chrono::steady_clock::now());
+                        }
+                        break;
+                    }
                     case relay::Kind::Error: relayLost(std::string("relay: ") + relay::toString(msg->error)); return;
                     default: relayLost("unexpected relay message"); return;
                 }
@@ -190,9 +203,17 @@ struct SessionHost::Impl {
     }
 
     void schedulePing(std::uint32_t gen, std::shared_ptr<tcp::socket> sock) {
-        relayPing.emplace(net.io(), std::chrono::seconds(15));
+        relayPing.emplace(net.io(), std::chrono::milliseconds(1000));
         relayPing->async_wait([this, gen, sock](std::error_code ec) {
             if (ec || gen != relayGen) return;
+            {
+                std::lock_guard lk(relayRttMutex);
+                // Every relay Ping gets one Pong, in order: remember which measurement it belongs to
+                // (0 = not measured, when the timer fired a little early).
+                auto ping = relayRtt.due(std::chrono::steady_clock::now());
+                relayPingSeqs.push_back(ping ? ping->seq : 0);
+                while (relayPingSeqs.size() > 16) relayPingSeqs.pop_front();
+            }
             auto out = std::make_shared<std::vector<std::uint8_t>>(relay::encode(relay::Message{relay::Kind::Ping}));
             asio::async_write(*sock, asio::buffer(*out), [this, gen, sock, out](std::error_code wec, std::size_t) {
                 if (gen != relayGen) return;
@@ -224,6 +245,10 @@ struct SessionHost::Impl {
         ++relayGen;  // ignore callbacks from the old connection
         if (relaySock) { std::error_code ec; relaySock->close(ec); relaySock.reset(); }
         if (relayPing) relayPing->cancel();
+        {
+            std::lock_guard lk(relayRttMutex);
+            relayPingSeqs.clear();  // pongs of the old connection will never come
+        }
         setRelayError(std::move(reason));
         if (!relayEnabled) return;
         relayStateA = relayRoomA.load() != 0 ? RelayState::Reconnecting : RelayState::Connecting;
@@ -238,6 +263,10 @@ struct SessionHost::Impl {
         ++relayGen;
         if (relaySock) { std::error_code ec; relaySock->close(ec); relaySock.reset(); }
         if (relayPing) relayPing->cancel();
+        {
+            std::lock_guard lk(relayRttMutex);
+            relayPingSeqs.clear();  // pongs of the old connection will never come
+        }
         if (relayRetry) relayRetry->cancel();
         relayStateA = RelayState::Off;
     }
@@ -617,6 +646,12 @@ const sync::Replica& SessionHost::state() const noexcept { return m->sequencer.s
 std::vector<PeerInfo> SessionHost::peers() const { return m->roster(); }
 
 void SessionHost::setAccountId(std::uint32_t accountId) { m->hostAccountId = accountId; }
+
+std::optional<PingStats> SessionHost::relayPingStats() const {
+    if (m->relayStateA.load() != RelayState::Ready) return std::nullopt;
+    std::lock_guard lk(m->relayRttMutex);
+    return m->relayRtt.stats();
+}
 
 std::optional<PingStats> SessionHost::pingStats(sync::PeerId peer) const {
     for (auto& [_, p] : m->peers) {

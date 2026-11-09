@@ -77,6 +77,11 @@ void testRelaySession() {
     for (int i = 0; i < 20; ++i) host.submitLocal(Op::create(host.newId(), PropMap{{1, "1"}, {2, std::to_string(i * 30)}, {3, "105"}}));
     host.startRelay("127.0.0.1", *rport, 3);  // relay id 3 in the directory
     CHECK(waitFor([&] { host.pump(); }, [&] { return host.relayState() == RelayState::Ready; }, 3000));
+    // The host measures its own round trip to the relay (shown in its Network tab).
+    CHECK(waitFor([&] { host.pump(); }, [&] {
+        auto st = host.relayPingStats();
+        return st && st->ms.has_value();
+    }, 4000));
     CHECK(host.relayRoomId() != 0);
     const auto code = relayCode(host);
 

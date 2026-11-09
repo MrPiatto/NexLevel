@@ -293,16 +293,16 @@ SessionManager::ConnectionInfo SessionManager::connectionInfo() const {
                 info.publicIp = a.ipString();
             }
         }
-        // The host has no ping of its own: show the slowest player's connection.
-        float worst = -1.f;
-        for (auto& p : m_host->peers()) {
-            if (p.id == session::SessionHost::kHostPeer) continue;
-            auto st = m_host->pingStats(p.id);
-            if (st && st->ms && st->avgMs > worst) {
-                worst = st->avgMs;
-                info.ping = *st;
-                info.pingSubject = p.name;
+        // The host's own connection: its round trip to the relay. (On a direct / local-network room
+        // there is no server in between to measure; each player's ping is in the Players tab.)
+        if (auto st = m_host->relayPingStats()) {
+            info.ping = *st;
+            std::string name = "relay";
+            for (auto& r : relayDirectory()) {
+                if (r.id == m_host->relayId()) name = r.name;
             }
+            if (m_host->relayId() == session::kCustomRelayId) name = "private relay";
+            info.pingSubject = "to " + name;
         }
     } else if (m_client) {
         info.role = "Player";

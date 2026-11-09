@@ -6,6 +6,7 @@
 - Teleport portals: the exit portal is now handled together with its entry portal. Before, syncing it on its own could crash, and made GD create extra exit portals that piled up in the level.
 - Fixed a crash when the host went back into the editor while the room was open.
 - Huge levels autosave every 5 minutes instead of 90 seconds (each save of a very big level takes a moment).
+- Network tab for the host: the gauge and the ping chart now show the host's own connection (round trip to the relay) instead of the slowest player's. Each player's ping stays in the Players tab.
 - Everyone in a room needs v1.0.3 (protocol v8).
 
 # v1.0.2
