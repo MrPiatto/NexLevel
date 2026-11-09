@@ -47,7 +47,7 @@ public:
     // ("<name> (NL)"), the original stays exactly as it was; otherwise on the open level itself.
     bool hostRoom(std::string* error, bool onCopy = false);
     bool join(const std::string& roomCode, std::string* error = nullptr);  // false: cannot join (error says why)
-    // From the main menu: joins, makes a new local level "NexLevel room" (renamed "NL - <host>" once
+    // From the main menu: joins, then makes one local level "NL - <host>" holding the room (
     // in) and opens the editor on it. The player's own levels are never touched.
     bool joinFromMenu(const std::string& roomCode, std::string* error = nullptr);
     void leave();                               // client: leave; host: close the room
@@ -114,7 +114,7 @@ public:
     bool isViewOnly(sync::PeerId peer) const;
 
     // Autosave (autosave.cpp). The host's room is written into the level it was opened from, also
-    // while the host is outside the editor; a player's copy goes to a local "NL - <host>" backup level.
+    // while the host is outside the editor; a player's copy goes into the level open in their editor.
     // toDisk: also write the save file (CCLocalLevels.dat) right away.
     void saveNow(bool toDisk, const char* reason);
     bool hosting() const { return m_host != nullptr; }
