@@ -12,13 +12,13 @@ Build the same level with your friends, at the same time, from anywhere.
 ![Geometry Dash 2.2081](https://img.shields.io/badge/Geometry%20Dash-2.2081-6c5ce7)
 ![Geode v5](https://img.shields.io/badge/Geode-v5-14c8b4)
 ![Windows](https://img.shields.io/badge/platform-Windows-0078d4)
-![Version](https://img.shields.io/badge/version-1.0.1-ff5078)
+![Version](https://img.shields.io/badge/version-1.0.2-ff5078)
 
 by **Forg3 Studios**
 
 </div>
 
-> **Status:** v1.0.1. If something doesn't work, please [open an issue](../../issues).
+> **Status:** v1.0.2. If something doesn't work, please [open an issue](../../issues).
 
 ---
 
