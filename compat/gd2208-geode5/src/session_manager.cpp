@@ -157,6 +157,13 @@ void SessionManager::openMenuJoinEditor() {
     m_menuJoinPending = false;
     const auto* room = view();
     if (!m_client || !room) return;
+    // Switching scenes from inside a level skips its own cleanup (music, player, timers): only open
+    // the editor from the menus.
+    if (PlayLayer::get()) {
+        notify("Leave the level to open the room - joining cancelled", NotificationIcon::Warning);
+        leave();
+        return;
+    }
     auto* level = GameLevelManager::sharedState()->createNewLevel();
     if (!level) {
         notify("Could not create a level for the room", NotificationIcon::Error);
@@ -438,6 +445,7 @@ std::string SessionManager::statusText() const {
 
 void SessionManager::attachEditor(IEditorBridge* bridge) {
     m_editor = bridge;
+    m_menuJoinPending = false;  // an editor is open now: the room goes into it
     if (!inSession()) return;
     if (m_host && !isRoomLevel(bridge->level())) {
         notify("NexLevel room is open for another level", NotificationIcon::Warning);

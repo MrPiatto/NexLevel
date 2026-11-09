@@ -13,6 +13,7 @@
 - Restore points: the host can save a copy of the room as its own level at any time, and one is saved automatically every 10 minutes while the room changes.
 - "Placed by": select one object to see who placed it, in the editor label.
 - If Geometry Dash closes unexpectedly during a room, NexLevel offers to open the logs folder and the bug report page at the next start.
+- Safety: joining from the main menu never switches scene from inside a level; chat notices use plain characters only; automatic restore points are skipped on huge levels (use the button).
 - Everyone in a room needs v1.0.3 (protocol v8).
 
 # v1.0.2

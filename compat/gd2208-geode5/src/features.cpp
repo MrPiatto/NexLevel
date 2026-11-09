@@ -96,7 +96,12 @@ void SessionManager::featuresTick() {
     const auto self = selfId();
     for (auto& l : lines) {
         ChatLine line{l.peer, peerName(l.peer), l.text};
-        if (!m_chatOpen && (!self || l.peer != *self)) notify(line.name + ": " + line.text, NotificationIcon::None);
+        if (!m_chatOpen && (!self || l.peer != *self)) {
+            // Notices use GD's bitmap font: keep plain ASCII there (the Chat tab shows the full text).
+            std::string plain;
+            for (char c : line.name + ": " + line.text) plain += static_cast<unsigned char>(c) < 128 ? c : '?';
+            notify(plain, NotificationIcon::None);
+        }
         m_chatLog.push_back(std::move(line));
         ++m_chatTotal;
         while (m_chatLog.size() > kChatKeep) m_chatLog.pop_front();
@@ -116,7 +121,8 @@ void SessionManager::featuresTick() {
     if (m_host && std::chrono::steady_clock::now() - m_lastCheckpoint > kAutoCheckpoint) {
         if (m_lastCheckpoint == std::chrono::steady_clock::time_point{}) {
             m_lastCheckpoint = std::chrono::steady_clock::now();  // first one 10 minutes after opening
-        } else if (const auto* room = view(); room && room->lastSeq() != g_checkpointSeq) {
+        } else if (const auto* room = view(); room && room->lastSeq() != g_checkpointSeq && room->objects().size() < 150000) {
+            // (Huge levels: automatic copies would freeze the game for seconds; use the button instead.)
             saveCheckpoint(true);
         } else {
             m_lastCheckpoint = std::chrono::steady_clock::now();
