@@ -357,6 +357,16 @@ public:
         m_dirty.clear();
         m_removedThisFrame.clear();
 
+        // "Placed by" in the editor label for a single selected object (its id says who created it).
+        {
+            GameObject* only = single;
+            if (!only && selected && selected->count() == 1) only = static_cast<GameObject*>(selected->objectAtIndex(0));
+            std::uint16_t creator = 0;
+            if (only && SessionManager::get()->inSession()) {
+                if (auto it = m_objToId.find(only); it != m_objToId.end()) creator = it->second.peer();
+            }
+            nexlevel::mod::setSelectionCreator(creator);
+        }
         nexlevel::mod::updatePresence(m_layer, m_paused);
 
         // Remote changes held back while the local user had the object selected or was mid-gesture.

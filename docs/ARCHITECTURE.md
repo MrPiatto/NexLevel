@@ -183,6 +183,18 @@ locale) e collega/scollega l'editor.
 
 ---
 
+## 7b. Funzioni di collaborazione (`features.cpp`)
+- **Chat**: messaggio `Chat` (client → host → altri). L'host mette l'id vero del mittente, toglie i
+  caratteri di controllo, limita a 200 caratteri e a un messaggio ogni 300 ms per giocatore.
+- **Solo visione**: l'host tiene un insieme di giocatori "view only"; le loro op vengono rifiutate
+  (`Rejected`), quindi sul loro editor la modifica viene annullata. Il flag viaggia nel Roster.
+- **Punti di ripristino**: copia della stanza come livello locale "<nome> CP hh:mm" (a mano o ogni
+  10 minuti se la stanza è cambiata).
+- **Placed by**: l'id di ogni oggetto contiene chi l'ha creato (`NetId::peer()`).
+- **Vai da lui**: sposta la telecamera dell'editor sulla posizione di presenza del giocatore.
+- **Segnalazione crash**: un file "in-room.marker" esiste mentre sei in una stanza; se al riavvio
+  c'è ancora, GD si è chiuso male e NexLevel propone di aprire i log e la pagina dei bug.
+
 ## 8. Ping e qualità della connessione (`session/ping.cpp`)
 Ogni secondo si manda un Ping; chi risponde dice anche quanto ha aspettato prima di rispondere, che
 viene sottratto, così il tempo misurato è solo la rete. Si tengono gli ultimi 60 valori: media,

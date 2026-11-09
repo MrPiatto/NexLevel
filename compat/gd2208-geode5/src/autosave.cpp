@@ -120,6 +120,7 @@ class $modify(NLAppDelegate, AppDelegate) {
     void trySaveGame(bool force) {
         auto* sm = SessionManager::get();
         if (sm->inSession()) sm->saveNow(false, "game save");
+        nexlevel::mod::clearSessionMarker();  // a save on exit = a normal close
         AppDelegate::trySaveGame(force);
     }
 };

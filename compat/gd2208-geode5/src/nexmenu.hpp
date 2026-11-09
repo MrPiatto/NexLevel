@@ -17,7 +17,7 @@ namespace nexlevel::mod {
 
 class NexMenu : public geode::Popup {
 public:
-    enum class Tab { Room, Players, Network, Settings };
+    enum class Tab { Room, Players, Chat, Network, Settings };
     // fromEditor = false: opened from the main menu. Hosting/joining needs the level's editor, so the
     // Room tab explains that instead of showing Host/Join (an open room is still shown and managed).
     static NexMenu* create(bool fromEditor = true);
@@ -49,6 +49,8 @@ protected:
     void buildPlayers();
     void buildNetwork();
     void buildSettings();
+    void buildChat();
+    void onExit() override;
 
     void onTab(cocos2d::CCObject* sender);
     void onClose2(cocos2d::CCObject*);
@@ -62,6 +64,10 @@ protected:
     void onToggleIp(cocos2d::CCObject*);
     void onToggleSetting(cocos2d::CCObject* sender);
     void onSaveRelay(cocos2d::CCObject*);
+    void onSendChat(cocos2d::CCObject*);
+    void onGoTo(cocos2d::CCObject* sender);
+    void onToggleViewOnly(cocos2d::CCObject* sender);
+    void onCheckpoint(cocos2d::CCObject*);
 
     Tab m_tab = Tab::Room;
     bool m_fromEditor = true;
@@ -76,6 +82,7 @@ protected:
     // live widgets of the current tab (null when not shown)
     geode::TextInput* m_codeInput = nullptr;
     geode::TextInput* m_relayInput = nullptr;
+    geode::TextInput* m_chatInput = nullptr;
     cocos2d::CCLabelTTF* m_codeText = nullptr;
     cocos2d::CCLabelTTF* m_onlineText = nullptr;
     cocos2d::CCLabelTTF* m_statPlayers = nullptr;

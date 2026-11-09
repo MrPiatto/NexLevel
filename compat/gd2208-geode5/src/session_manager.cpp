@@ -502,6 +502,7 @@ void SessionManager::tick(float dt) {
         updateHostingBadge();
     }
     autosaveTick();
+    featuresTick();
     // Log and announce players joining/leaving (host and client).
     auto now = peers();
     if (now != m_lastPeers) {

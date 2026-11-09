@@ -1,5 +1,6 @@
 #include "nexmenu.hpp"
 
+#include "presence_overlay.hpp"
 #include "session_manager.hpp"
 #include "ui_common.hpp"
 
@@ -83,7 +84,9 @@ std::string NexMenu::structure() const {
     auto* sm = SessionManager::get();
     std::string s = std::to_string(static_cast<int>(m_tab)) + "|" + std::to_string(static_cast<int>(sm->role())) + "|" +
                     (sm->roomCode() ? "c" : "-") + "|" + (m_showIp ? "i" : "-");
-    for (auto& p : sm->peers()) s += "|" + std::to_string(p.id) + p.name;
+    for (auto& p : sm->peers()) s += "|" + std::to_string(p.id) + p.name + (p.viewOnly ? "v" : "");
+    if (m_tab == Tab::Chat) s += "|chat" + std::to_string(sm->chatCount());
+    if (m_tab == Tab::Players) s += "|" + std::to_string(sm->presences().size());
     return s;
 }
 
@@ -98,9 +101,10 @@ void NexMenu::refresh(float) {
 void NexMenu::buildTab() {
     // Keep what the player typed across rebuilds.
     std::string typedCode = m_codeInput ? std::string(m_codeInput->getString()) : Mod::get()->getSavedValue<std::string>("last-code", "");
+    std::string typedChat = m_chatInput ? std::string(m_chatInput->getString()) : std::string();
     for (auto* n : m_dynamic) n->removeFromParent();
     m_dynamic.clear();
-    m_codeInput = m_relayInput = nullptr;
+    m_codeInput = m_relayInput = m_chatInput = nullptr;
     m_codeText = m_onlineText = m_statPlayers = m_statObjects = m_statUptime = nullptr;
     m_pingRows.clear();
     m_gauge = nullptr;
@@ -116,10 +120,10 @@ void NexMenu::buildTab() {
     addButton(kit::button("X", {20.f, 20.f}, kit::Style::Ghost, this, menu_selector(NexMenu::onClose2), 9.f), W - 24.f, H - 24.f);
 
     // ---- tab bar ----
-    const char* names[] = {"Room", "Players", "Network", "Settings"};
-    const float tabW = 96.f, barW = tabW * 4.f + 8.f;
+    const char* names[] = {"Room", "Players", "Chat", "Network", "Settings"};
+    const float tabW = 84.f, barW = tabW * 5.f + 8.f;
     add(kit::card({barW, 26.f}, 13.f, kit::rgba(30, 34, 64, .9f), kit::rgba(kit::kViolet, .25f), .6f), W / 2.f, H - 64.f);
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) {
         const bool sel = static_cast<int>(m_tab) == i;
         auto* b = kit::button(names[i], {tabW - 4.f, 20.f}, sel ? kit::Style::Primary : kit::Style::Ghost, this,
                               menu_selector(NexMenu::onTab), 8.5f);
@@ -137,10 +141,13 @@ void NexMenu::buildTab() {
     switch (m_tab) {
         case Tab::Room: buildRoom(); break;
         case Tab::Players: buildPlayers(); break;
+        case Tab::Chat: buildChat(); break;
         case Tab::Network: buildNetwork(); break;
         case Tab::Settings: buildSettings(); break;
     }
     if (m_codeInput) m_codeInput->setString(typedCode);
+    if (m_chatInput) m_chatInput->setString(typedChat);
+    SessionManager::get()->setChatOpen(m_tab == Tab::Chat);
     updateLive();
 }
 
@@ -213,9 +220,15 @@ void NexMenu::buildRoom() {
         addText(captions[i], 6.5f, cx, tileY - 13.f, kit::kMuted, 1, {.5f, .5f});
     }
 
-    addButton(kit::button(host ? "Close room" : "Leave room", {150.f, 26.f}, kit::Style::Danger, this,
-                          menu_selector(NexMenu::onLeave), 9.5f), W / 2.f, 40.f);
-    addText(host ? "The room stays open if you leave the editor" : "Your edits are shared live with everyone", 7.f, W / 2.f, 16.f,
+    if (host) {
+        addButton(kit::button("Restore point", {120.f, 26.f}, kit::Style::Secondary, this, menu_selector(NexMenu::onCheckpoint), 9.f),
+                  W / 2.f - 70.f, 40.f);
+        addButton(kit::button("Close room", {120.f, 26.f}, kit::Style::Danger, this, menu_selector(NexMenu::onLeave), 9.5f),
+                  W / 2.f + 70.f, 40.f);
+    } else {
+        addButton(kit::button("Leave room", {150.f, 26.f}, kit::Style::Danger, this, menu_selector(NexMenu::onLeave), 9.5f), W / 2.f, 40.f);
+    }
+    addText(host ? "Restore point = a copy of the room in your levels (also every 10 min)" : "Your edits are shared live with everyone", 7.f, W / 2.f, 16.f,
             kit::kMuted, 0, {.5f, .5f});
 }
 
@@ -249,6 +262,17 @@ void NexMenu::buildPlayers() {
         };
         if (p.id == session::SessionHost::kHostPeer) addChip("HOST", kit::kViolet);
         if (self && p.id == *self) addChip("YOU", kit::kTeal);
+        if (p.viewOnly) addChip("VIEW ONLY", kit::kWarn);
+        const bool isSelf = self && p.id == *self;
+        if (m_fromEditor && !isSelf) {
+            bool here = false;
+            for (auto& pr : sm->presences()) here = here || pr.peer == p.id;
+            if (here) {
+                auto* go = kit::button("Go", {30.f, 17.f}, kit::Style::Secondary, this, menu_selector(NexMenu::onGoTo), 7.f);
+                go->setTag(p.id);
+                addButton(go, 214.f, y);
+            }
+        }
 
         if (p.id != session::SessionHost::kHostPeer) {
             auto* meter = add(kit::Meter::create({56.f, 5.f}), 262.f, y);
@@ -258,14 +282,18 @@ void NexMenu::buildPlayers() {
             addText("host", 7.5f, 286.f, y, kit::kMuted, 0, {.5f, .5f});
         }
         if (p.accountId != 0) {
-            auto* b = kit::button("Profile", {50.f, 17.f}, kit::Style::Secondary, this, menu_selector(NexMenu::onProfile), 7.f);
+            auto* b = kit::button("Profile", {36.f, 17.f}, kit::Style::Secondary, this, menu_selector(NexMenu::onProfile), 6.5f);
             b->setTag(static_cast<int>(p.accountId));
-            addButton(b, 356.f, y);
+            addButton(b, 340.f, y);
         }
         if (host && p.id != session::SessionHost::kHostPeer) {
-            auto* b = kit::button("Kick", {40.f, 17.f}, kit::Style::Danger, this, menu_selector(NexMenu::onKick), 7.f);
+            auto* v = kit::button(p.viewOnly ? "Allow" : "View", {40.f, 17.f}, p.viewOnly ? kit::Style::Primary : kit::Style::Secondary,
+                                  this, menu_selector(NexMenu::onToggleViewOnly), 6.5f);
+            v->setTag(p.id);
+            addButton(v, 382.f, y);
+            auto* b = kit::button("Kick", {36.f, 17.f}, kit::Style::Danger, this, menu_selector(NexMenu::onKick), 6.5f);
             b->setTag(p.id);
-            addButton(b, 412.f, y);
+            addButton(b, 424.f, y);
         }
     }
     if (peers.size() > maxRows) {
@@ -482,6 +510,68 @@ void NexMenu::onLeave(CCObject*) {
     }
     SessionManager::get()->leave();
     buildTab();
+}
+
+void NexMenu::buildChat() {
+    auto* sm = SessionManager::get();
+    if (!sm->inSession()) {
+        addText("No room yet", 12.f, W / 2.f, 140.f, kit::kText, 1, {.5f, .5f});
+        addText("Chat with everyone in your room here.", 8.f, W / 2.f, 122.f, kit::kMuted, 0, {.5f, .5f});
+        return;
+    }
+    add(kit::card({428.f, 150.f}, 10.f, kit::rgba(30, 34, 66, .85f), kit::rgba(kit::kViolet, .3f), .8f), W / 2.f, kContentTop - 80.f);
+    const auto& log = sm->chatLog();
+    constexpr std::size_t kLines = 9;
+    const std::size_t first = log.size() > kLines ? log.size() - kLines : 0;
+    float y = kContentTop - 14.f;
+    if (log.empty()) addText("No messages yet - say hi!", 8.f, W / 2.f, kContentTop - 80.f, kit::kMuted, 0, {.5f, .5f});
+    for (std::size_t i = first; i < log.size(); ++i) {
+        const auto& line = log[i];
+        auto* who = addText(line.name + ":", 7.5f, 26.f, y, ui::peerColor(line.peer), 1);
+        const float x = 26.f + who->getContentSize().width + 5.f;
+        auto* text = addText(line.text, 7.5f, x, y, kit::kText);
+        const float room = 444.f - x;
+        if (text->getContentSize().width > room) text->setScale(room / text->getContentSize().width);
+        y -= 16.f;
+    }
+    add(kit::card({340.f, 24.f}, 8.f, kit::rgba(12, 14, 30, 1.f), kit::rgba(kit::kTeal, .45f), .7f), 16.f + 170.f, 26.f);
+    m_chatInput = TextInput::create(330.f, "Message...", "chatFont.fnt");
+    m_chatInput->hideBG();
+    m_chatInput->setCommonFilter(CommonFilter::Any);
+    m_chatInput->setMaxCharCount(static_cast<int>(session::kMaxChatLen));
+    add(m_chatInput, 16.f + 170.f, 26.f);
+    addButton(kit::button("Send", {72.f, 24.f}, kit::Style::Primary, this, menu_selector(NexMenu::onSendChat), 9.f), 404.f, 26.f);
+}
+
+void NexMenu::onSendChat(CCObject*) {
+    if (!m_chatInput) return;
+    std::string text = m_chatInput->getString();
+    if (text.empty()) return;
+    SessionManager::get()->sendChat(text);
+    m_chatInput->setString("");
+    buildTab();
+}
+
+void NexMenu::onGoTo(CCObject* sender) {
+    const auto peer = static_cast<std::uint16_t>(static_cast<CCNode*>(sender)->getTag());
+    if (focusOnPlayer(peer)) this->onClose(nullptr);
+    else notify("That player is not in the editor right now", NotificationIcon::Info);
+}
+
+void NexMenu::onToggleViewOnly(CCObject* sender) {
+    const auto peer = static_cast<std::uint16_t>(static_cast<CCNode*>(sender)->getTag());
+    auto* sm = SessionManager::get();
+    sm->setViewOnly(peer, !sm->isViewOnly(peer));
+    buildTab();
+}
+
+void NexMenu::onCheckpoint(CCObject*) {
+    if (!SessionManager::get()->saveCheckpoint(false)) notify("Nothing to save yet", NotificationIcon::Info);
+}
+
+void NexMenu::onExit() {
+    SessionManager::get()->setChatOpen(false);
+    Popup::onExit();
 }
 
 void NexMenu::onKick(CCObject* sender) {

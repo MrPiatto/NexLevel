@@ -7,6 +7,12 @@
 - Fixed a crash when the host went back into the editor while the room was open.
 - Huge levels autosave every 5 minutes instead of 90 seconds (each save of a very big level takes a moment).
 - Network tab for the host: the gauge and the ping chart now show the host's own connection (round trip to the relay) instead of the slowest player's. Each player's ping stays in the Players tab.
+- Room chat: new Chat tab; messages from others also pop up as notices.
+- "Go" button in the Players tab: jumps your editor camera to where that player is working.
+- View-only players: the host can turn editing off (and back on) for anyone; their edits are undone and they can still watch.
+- Restore points: the host can save a copy of the room as its own level at any time, and one is saved automatically every 10 minutes while the room changes.
+- "Placed by": select one object to see who placed it, in the editor label.
+- If Geometry Dash closes unexpectedly during a room, NexLevel offers to open the logs folder and the bug report page at the next start.
 - Everyone in a room needs v1.0.3 (protocol v8).
 
 # v1.0.2

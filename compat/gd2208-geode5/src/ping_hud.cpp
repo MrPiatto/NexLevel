@@ -9,7 +9,10 @@ namespace nexlevel::mod {
 
 namespace {
 constexpr int kHudTag = 0x4E5850;  // "NXP"
+std::uint16_t g_selectionCreator = 0;
 }
+
+void setSelectionCreator(std::uint16_t peer) { g_selectionCreator = peer; }
 
 void updatePingHud(CCNode* editorUI) {
     if (!editorUI) return;
@@ -43,6 +46,11 @@ void updatePingHud(CCNode* editorUI) {
         } else {
             text = "Ping ...";
         }
+    }
+    if (g_selectionCreator != 0) text += "   |   Placed by " + sm->peerName(g_selectionCreator);
+    if (sm->selfId() && sm->isViewOnly(*sm->selfId())) {
+        text = "View only - " + text;
+        color = ui::kGrey;
     }
     if (hud->getString() != text) hud->setString(text.c_str());
     hud->setColor(color);

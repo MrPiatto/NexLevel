@@ -239,4 +239,23 @@ void updatePresence(LevelEditorLayer* layer, bool paused) {
     overlay->redrawPlaytests(z);  // keeps trails complete even while hidden
 }
 
+bool focusOnPlayer(std::uint16_t peer) {
+    auto* layer = LevelEditorLayer::get();
+    if (!layer || !layer->m_objectLayer) return false;
+    for (auto& p : SessionManager::get()->presences()) {
+        if (p.peer != peer) continue;
+        // Inverse of updatePresence: the view centre (p.x, p.y) goes to the middle of the screen.
+        auto* objectLayer = layer->m_objectLayer;
+        const float scale = objectLayer->getScale();
+        const auto win = CCDirector::sharedDirector()->getWinSize();
+        const auto parentCentre = objectLayer->getParent()
+                                      ? objectLayer->getParent()->convertToNodeSpace(CCPoint{win.width / 2.f, win.height / 2.f})
+                                      : CCPoint{win.width / 2.f, win.height / 2.f};
+        objectLayer->setPosition({parentCentre.x - p.x * scale, parentCentre.y - p.y * scale});
+        if (auto* ui = EditorUI::get()) ui->constrainGameLayerPosition();
+        return true;
+    }
+    return false;
+}
+
 } // namespace nexlevel::mod

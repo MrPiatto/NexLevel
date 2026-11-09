@@ -10,6 +10,7 @@
 #include <nexlevel/core/net/upnp.hpp>
 
 #include <chrono>
+#include <deque>
 #include <map>
 #include <memory>
 #include <optional>
@@ -97,6 +98,24 @@ public:
     void submitLocal(sync::Op op);
     const sync::Replica* view() const;
 
+    // Room chat (features.cpp). Lines are kept for the Chat tab; new ones from others pop up as notices.
+    struct ChatLine {
+        sync::PeerId peer = 0;
+        std::string name;
+        std::string text;
+    };
+    void sendChat(const std::string& text);
+    const std::deque<ChatLine>& chatLog() const { return m_chatLog; }
+    std::size_t chatCount() const { return m_chatTotal; }
+    void setChatOpen(bool open) { m_chatOpen = open; }
+
+    // Permissions (host: turn editing off for a player; everyone: see who is view-only).
+    void setViewOnly(sync::PeerId peer, bool on);
+    bool isViewOnly(sync::PeerId peer) const;
+
+    // Restore points: a copy of the room as its own local level ("<name> CP 14:05").
+    bool saveCheckpoint(bool automatic);
+
     // Autosave (autosave.cpp). The host's room is written into the level it was opened from, also
     // while the host is outside the editor; a player's copy goes to a local "NL - <host>" backup level.
     // toDisk: also write the save file (CCLocalLevels.dat) right away.
@@ -106,6 +125,12 @@ public:
 
 private:
     void autosaveTick();
+    void featuresTick();
+    std::deque<ChatLine> m_chatLog;
+    std::size_t m_chatTotal = 0;
+    bool m_chatOpen = false;
+    bool m_wasViewOnly = false;
+    std::chrono::steady_clock::time_point m_lastCheckpoint{};
     bool makeHostCopy(std::string* error);
     GJGameLevel* backupLevel();
     void ensureScheduled();
@@ -136,5 +161,7 @@ private:
 };
 
 void notify(const std::string& text, geode::NotificationIcon icon = geode::NotificationIcon::Info);
+// GD is closing normally: forget the "in a room" marker used to detect unexpected closes.
+void clearSessionMarker();
 
 } // namespace nexlevel::mod
