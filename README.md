@@ -2,7 +2,25 @@
 
 Create Together. Build Beyond.
 
-Real-time collaborative level editing for Geometry Dash, built on Geode. The host runs the session server inside the game; other players connect to it directly, with optional NAT traversal and relay fallback.
+Real-time collaborative level editing for Geometry Dash, built on Geode.
+
+**v1.0.0** - GD 2.2081, Windows (Geode v5).
+
+- **Shared editor.** Objects and level settings (colours, background, ground, song, start
+  options) sync live, with a background sweep that catches anything the hooks miss.
+- **See each other.** Every player gets a colour: a frame shows where each one is working, and
+  you can watch other players playtest with their icon and a trail.
+- **Rooms.** Short codes, up to 16 players, kick, reconnection, and fast joins of very large
+  levels.
+- **Network.** End-to-end encrypted. Uses official relays (they work on any network, including
+  mobile data and CGNAT; the nearest one is picked automatically), UPnP, or LAN. A player can
+  also set a private relay.
+- **NexLevel menu.** Tabs for Room, Players (ping, profiles), Network (quality gauge, ping
+  chart) and Settings.
+
+How it fits together: the host runs the session server inside the game, and players join with
+a room code. When a direct connection is not possible, traffic goes through a relay, which only
+ever sees encrypted data. See `docs/RELAY.md` and `docs/ONLINE.md`.
 
 ## Layout
 

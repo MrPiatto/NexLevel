@@ -149,7 +149,7 @@ std::optional<Hello> decodeHello(std::span<const std::uint8_t> p) {
 bool validPlayerState(const PlayerState& s) noexcept {
     auto ok = [](float v, float lim) { return v == v && v > -lim && v < lim; };
     return ok(s.x1, 1e7f) && ok(s.y1, 1e7f) && ok(s.rot1, 1e6f) && ok(s.scale1, 100.f) && ok(s.x2, 1e7f) && ok(s.y2, 1e7f) &&
-           ok(s.rot2, 1e6f) && ok(s.scale2, 100.f) && s.mode1 < 32 && s.mode2 < 32;
+           ok(s.rot2, 1e6f) && ok(s.scale2, 100.f) && s.mode1 < 32 && s.mode2 < 32 && s.icon1 < 2000 && s.icon2 < 2000;
 }
 std::vector<std::uint8_t> encode(const PlayerState& m) {
     ByteWriter w;
@@ -159,6 +159,11 @@ std::vector<std::uint8_t> encode(const PlayerState& m) {
     w.u8(m.mode1);
     w.u8(m.mode2);
     for (float v : {m.x1, m.y1, m.rot1, m.scale1, m.x2, m.y2, m.rot2, m.scale2}) w.f32(v);
+    w.u16(m.icon1);
+    w.u16(m.icon2);
+    w.u8(m.r);
+    w.u8(m.g);
+    w.u8(m.b);
     return w.take();
 }
 std::optional<PlayerState> decodePlayerState(std::span<const std::uint8_t> p) {
@@ -170,6 +175,11 @@ std::optional<PlayerState> decodePlayerState(std::span<const std::uint8_t> p) {
     m.mode1 = r.u8();
     m.mode2 = r.u8();
     for (float* v : {&m.x1, &m.y1, &m.rot1, &m.scale1, &m.x2, &m.y2, &m.rot2, &m.scale2}) *v = r.f32();
+    m.icon1 = r.u16();
+    m.icon2 = r.u16();
+    m.r = r.u8();
+    m.g = r.u8();
+    m.b = r.u8();
     if (!r.atEnd() || !validPlayerState(m)) return std::nullopt;
     return m;
 }

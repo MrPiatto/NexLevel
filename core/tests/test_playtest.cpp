@@ -65,6 +65,8 @@ void testSpectating() {
     s.session = 7;
     s.flags = PlayerState::Playing;
     s.mode1 = 1;  // ship
+    s.icon1 = 42;
+    s.r = 10;
     for (int i = 0; i < 40; ++i) {
         s.x1 = 100.f + static_cast<float>(i) * 10.f;
         s.y1 = 105.f + static_cast<float>(i % 5) * 3.f;
@@ -79,7 +81,8 @@ void testSpectating() {
     }, 3000);
     CHECK(seen);
     auto hostIt = host.playTrails().find(tester);
-    CHECK(hostIt != host.playTrails().end() && hostIt->second.points1.size() >= 20 && hostIt->second.last.mode1 == 1);
+    CHECK(hostIt != host.playTrails().end() && hostIt->second.points1.size() >= 20 && hostIt->second.last.mode1 == 1 &&
+          hostIt->second.last.icon1 == 42 && hostIt->second.last.r == 10);
     CHECK(a.playTrails().find(tester) == a.playTrails().end());  // own state is not echoed
 
     // The host playtests too: both players see it.

@@ -23,7 +23,9 @@ using asio::ip::tcp;
 using Clock = std::chrono::steady_clock;
 
 namespace {
-constexpr auto kResumeWindow = std::chrono::seconds(120);  // how long a dropped player can reclaim their identity
+constexpr auto kResumeWindow = std::chrono::seconds(120);
+constexpr double kOpBurst = 60000.0;       // ops a player may send at once (huge paste)
+constexpr double kOpRefillPerSec = 10000.0;  // how long a dropped player can reclaim their identity
 }
 
 struct SessionHost::Impl {
@@ -46,6 +48,10 @@ struct SessionHost::Impl {
         Clock::time_point lastPresence{};
         Clock::time_point lastPlayerState{};
         std::uint8_t lastPlayerFlags = 0;
+        // Edit flood protection (token bucket): big pastes fit, a script spamming the room does not.
+        double opTokens = kOpBurst;
+        Clock::time_point lastPingAnswered{};
+        Clock::time_point opRefill = Clock::now();
     };
     struct Identity {  // survives the connection, for reconnects
         sync::PeerId id = 0;
@@ -425,6 +431,9 @@ struct SessionHost::Impl {
             return;
         }
         if (static_cast<MsgType>(f.type) == MsgType::Ping) {
+            // Clients ping once a second; answering at most 5/s keeps a spammer from using us as an amplifier.
+            if (arrival - p.lastPingAnswered < std::chrono::milliseconds(200)) return;
+            p.lastPingAnswered = arrival;
             if (auto ping = decodePing(f.payload)) sendTo(conn, MsgType::Pong, encode(answer(*ping, arrival)));
             return;
         }
@@ -442,6 +451,16 @@ struct SessionHost::Impl {
             p.presence = pr;
             broadcastPresence(*pr, conn);
             return;
+        }
+        if (static_cast<MsgType>(f.type) == MsgType::Submit) {
+            const auto now = Clock::now();
+            p.opTokens = std::min(kOpBurst, p.opTokens + std::chrono::duration<double>(now - p.opRefill).count() * kOpRefillPerSec);
+            p.opRefill = now;
+            if (p.opTokens < 1.0) {
+                closeConn(conn, "too many edits (flood protection)");
+                return;
+            }
+            p.opTokens -= 1.0;
         }
         if (static_cast<MsgType>(f.type) != MsgType::Submit) {
             closeConn(conn, "unexpected message");

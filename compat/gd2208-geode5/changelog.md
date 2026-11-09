@@ -1,4 +1,4 @@
-# v1.0.0-beta.1
+# v1.0.0 - first release
 - Real-time collaborative editing: objects, level settings (colours, background, ground, song, start options) and live presence.
 - Rooms with short codes, up to 16 players, kick, close room, room stays open when the host leaves the editor.
 - Automatic reconnection, fast join of very large levels.

@@ -29,6 +29,7 @@ struct TrailView {
     std::uint16_t session = 0xFFFF;
     std::size_t drawn1 = 0, drawn2 = 0;
     int mode1 = -1, mode2 = -1;
+    int icon1Id = -1, icon2Id = -1;
 };
 
 struct Shown {
@@ -95,22 +96,25 @@ public:
 
             // Icons only while they are actually playing (and updates keep coming).
             const bool live = t.last.playing() && now - t.updated < std::chrono::milliseconds(1500);
-            auto placeIcon = [&](SimplePlayer*& icon, int& mode, bool show, int newMode, float x, float y, float rot, float scale, bool upside) {
+            // Each player's own icon in their own colour; the trail and name use their room colour.
+            const ccColor3B iconColor{t.last.r, t.last.g, t.last.b};
+            auto placeIcon = [&](SimplePlayer*& icon, int& mode, int& iconId, bool show, int newMode, int newIcon, float x, float y, float rot,
+                                 float scale, bool upside) {
                 if (!show) {
                     if (icon) icon->setVisible(false);
                     return;
                 }
                 if (!icon) {
-                    icon = SimplePlayer::create(1);
+                    icon = SimplePlayer::create(newIcon);
                     if (!icon) return;
-                    icon->setColor(c);
                     m_trailLayer->addChild(icon, 1);
                 }
-                if (mode != newMode) {
-                    icon->updatePlayerFrame(1, static_cast<IconType>(newMode));
-                    icon->setColor(c);
+                if (mode != newMode || iconId != newIcon) {
+                    icon->updatePlayerFrame(newIcon, static_cast<IconType>(newMode));
                     mode = newMode;
+                    iconId = newIcon;
                 }
+                icon->setColor(iconColor);
                 icon->setVisible(true);
                 icon->setPosition({x, y});
                 icon->setRotation(rot);
@@ -119,9 +123,10 @@ public:
                 icon->setScaleY(upside ? -sc : sc);
             };
             using PS = session::PlayerState;
-            placeIcon(v.icon1, v.mode1, live, t.last.mode1, t.last.x1, t.last.y1, t.last.rot1, t.last.scale1, t.last.flags & PS::UpsideDown1);
-            placeIcon(v.icon2, v.mode2, live && (t.last.flags & PS::Dual), t.last.mode2, t.last.x2, t.last.y2, t.last.rot2, t.last.scale2,
-                      t.last.flags & PS::UpsideDown2);
+            placeIcon(v.icon1, v.mode1, v.icon1Id, live, t.last.mode1, t.last.icon1, t.last.x1, t.last.y1, t.last.rot1, t.last.scale1,
+                      t.last.flags & PS::UpsideDown1);
+            placeIcon(v.icon2, v.mode2, v.icon2Id, live && (t.last.flags & PS::Dual), t.last.mode2, t.last.icon2, t.last.x2, t.last.y2,
+                      t.last.rot2, t.last.scale2, t.last.flags & PS::UpsideDown2);
             v.name->setVisible(live);
             v.name->setScale(.4f / myZoom);
             v.name->setPosition({t.last.x1, t.last.y1 + 24.f});

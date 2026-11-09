@@ -99,6 +99,8 @@ struct PlayerState {
     std::uint8_t mode1 = 0, mode2 = 0;  // GD IconType (cube, ship, ball, ufo, wave, robot, spider, swing...)
     float x1 = 0, y1 = 0, rot1 = 0, scale1 = 1;
     float x2 = 0, y2 = 0, rot2 = 0, scale2 = 1;
+    std::uint16_t icon1 = 1, icon2 = 1;  // the player's own icon for the current modes
+    std::uint8_t r = 255, g = 255, b = 255;  // the player's main icon colour
     bool playing() const noexcept { return flags & Playing; }
 };
 bool validPlayerState(const PlayerState& s) noexcept;

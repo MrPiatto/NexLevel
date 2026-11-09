@@ -86,9 +86,16 @@ public:
         auto* p1 = m_layer->m_player1;
         if (!p1) return st;
         st.flags = nexlevel::session::PlayerState::Playing;
+        // The player's own icons and colour (GameManager::activeIconForType / colorForIdx).
+        auto* gm = GameManager::sharedState();
+        const auto col = gm->colorForIdx(gm->m_playerColor);
+        st.r = col.r;
+        st.g = col.g;
+        st.b = col.b;
         if (p1->m_isDead) st.flags |= nexlevel::session::PlayerState::Dead;
         if (p1->m_isUpsideDown) st.flags |= nexlevel::session::PlayerState::UpsideDown1;
         st.mode1 = modeOf(p1);
+        st.icon1 = static_cast<std::uint16_t>(std::clamp(gm->activeIconForType(static_cast<IconType>(st.mode1)), 1, 1999));
         st.x1 = p1->getPositionX();
         st.y1 = p1->getPositionY();
         st.rot1 = p1->getRotation();
@@ -98,6 +105,7 @@ public:
             st.flags |= nexlevel::session::PlayerState::Dual;
             if (p2->m_isUpsideDown) st.flags |= nexlevel::session::PlayerState::UpsideDown2;
             st.mode2 = modeOf(p2);
+            st.icon2 = static_cast<std::uint16_t>(std::clamp(gm->activeIconForType(static_cast<IconType>(st.mode2)), 1, 1999));
             st.x2 = p2->getPositionX();
             st.y2 = p2->getPositionY();
             st.rot2 = p2->getRotation();
@@ -135,7 +143,7 @@ public:
         if (!o || ignoring() || !m_armed || m_cache.contains(o)) return;
         auto props = read(o);
         if (m_createdLogged++ < kMaxLogLinesPerKind) {
-            log::info("NexLevel diff: created uid={} id={} ({} props, via {})", o->m_uniqueID, o->m_objectID, props.size(), via);
+            log::debug("NexLevel diff: created uid={} id={} ({} props, via {})", o->m_uniqueID, o->m_objectID, props.size(), via);
         }
         publishCreate(o, props);
         m_cache[o] = std::move(props);
@@ -150,7 +158,7 @@ public:
             // The object may already be freed: log from the cache, never dereference it.
             auto c = m_cache.find(o);
             const std::string kind = c != m_cache.end() && c->second.contains(1) ? c->second.at(1) : "?";
-            log::info("NexLevel diff: removed object id={}", kind);
+            log::debug("NexLevel diff: removed object id={}", kind);
         }
         if (auto it = m_objToId.find(o); it != m_objToId.end()) {
             if (SessionManager::get()->inSession()) SessionManager::get()->submitLocal(nls::Op::erase(it->second));
@@ -252,7 +260,7 @@ public:
                 if (d.empty()) continue;
                 ++changedTotal;
                 if (changedLogged++ < kMaxLogLinesPerKind) {
-                    log::info("NexLevel diff: changed uid={} id={}: {}", o->m_uniqueID, o->m_objectID, nls::describe(d));
+                    log::debug("NexLevel diff: changed uid={} id={}: {}", o->m_uniqueID, o->m_objectID, nls::describe(d));
                 }
                 publishChange(o, now, d);
                 it->second = std::move(now);
@@ -299,7 +307,7 @@ public:
             auto now = read(o);
             auto d = nls::diffProps(it->second, now);
             if (d.empty()) continue;
-            log::info("NexLevel diff: sweep found a change uid={} id={}: {}", o->m_uniqueID, o->m_objectID, nls::describe(d));
+            log::debug("NexLevel diff: sweep found a change uid={} id={}: {}", o->m_uniqueID, o->m_objectID, nls::describe(d));
             publishChange(o, now, d);
             it->second = std::move(now);
         }
@@ -366,7 +374,7 @@ public:
             return;
         }
         RemoteScope scope(*this);
-        log::info("NexLevel: applying {} remote change(s)", ids.size());
+        log::debug("NexLevel: applying {} remote change(s)", ids.size());
         for (auto id : ids) {
             if (nls::isLevelSettings(id)) {  // not a GameObject: level-wide settings
                 if (view->find(id)) applySettingsFromView(*view);
@@ -511,7 +519,7 @@ private:
 
     static void flushSummary(const char* kind, std::size_t total) {
         if (total > kMaxLogLinesPerKind) {
-            log::info("NexLevel diff: ... {} more {} this frame", total - kMaxLogLinesPerKind, kind);
+            log::debug("NexLevel diff: ... {} more {} this frame", total - kMaxLogLinesPerKind, kind);
         }
     }
 
@@ -641,7 +649,7 @@ class $modify(NLLevelEditorLayer, LevelEditorLayer) {
     void handleAction(bool undo, CCArray* undoObjects) {
         LevelEditorLayer::handleAction(undo, undoObjects);
         if (g_tracker) {
-            log::info("NexLevel diff: {} applied", undo ? "undo" : "redo");
+            log::debug("NexLevel diff: {} applied", undo ? "undo" : "redo");
             g_tracker->markAllDirty();
         }
     }

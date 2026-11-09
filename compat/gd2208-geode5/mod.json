@@ -1,16 +1,13 @@
 {
 	"geode": "5.10.1",
 	"gd": {
-		"win": "2.2081",
-		"android": "2.2081",
-		"mac": "2.2081",
-		"ios": "2.2081"
+		"win": "2.2081"
 	},
 	"id": "forg3studios.nexlevel",
 	"name": "NexLevel",
-	"version": "v1.0.0-beta.1",
+	"version": "v1.0.0",
 	"developer": "Forg3 Studios",
-	"description": "Create Together. Build Beyond. Real-time collaborative level editing.",
+	"description": "Create Together. Build Beyond. Real-time collaborative level editing with your friends.",
 	"settings": {
 		"relay-server": {
 			"type": "string",
