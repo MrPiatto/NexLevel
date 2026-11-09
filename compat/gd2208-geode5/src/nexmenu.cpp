@@ -151,27 +151,23 @@ void NexMenu::buildRoom() {
     const auto glass = kit::rgba(30, 34, 66, .85f);
     const auto edge = kit::rgba(kit::kViolet, .3f);
 
-    if (role == Role::None && !m_fromEditor) {
-        add(kit::card({428.f, 176.f}, 12.f, glass, edge, .8f), W / 2.f, 22.f + 88.f);
-        addText("Create together", 14.f, 34.f, 178.f, kit::kText, 1);
-        addText("Rooms are hosted and joined from the level editor:", 8.f, 34.f, 156.f, kit::kMuted);
-        addText("1.  Open the level you want to build on (Create > your level > Edit)", 8.f, 34.f, 134.f, kit::kText);
-        addText("2.  Press Esc and tap  NexLevel Collab", 8.f, 34.f, 116.f, kit::kText);
-        addText("3.  Host room (this level or a safe copy), or paste a code and Join", 8.f, 34.f, 98.f, kit::kText);
-        addText("Players, Network and Settings work from here too.", 7.5f, 34.f, 70.f, kit::kMuted);
-        addText("Everyone needs the same Geometry Dash version", 7.f, W / 2.f, 12.f, kit::kMuted, 0, {.5f, .5f});
-        return;
-    }
-
     if (role == Role::None) {
         // Host card
         add(kit::card({206.f, 176.f}, 12.f, glass, edge, .8f), 16.f + 103.f, 22.f + 88.f);
         addText("Host a room", 12.f, 30.f, 180.f, kit::kText, 1);
-        addText("Open this level to your friends.", 7.5f, 30.f, 162.f, kit::kMuted);
-        addText("They join with a short code,", 7.5f, 30.f, 151.f, kit::kMuted);
-        addText("no IP, no router settings.", 7.5f, 30.f, 140.f, kit::kMuted);
-        addButton(kit::button("Host room", {150.f, 28.f}, kit::Style::Primary, this, menu_selector(NexMenu::onHost), 10.f),
-                  16.f + 103.f, 92.f);
+        if (m_fromEditor) {
+            addText("Open this level to your friends.", 7.5f, 30.f, 162.f, kit::kMuted);
+            addText("They join with a short code,", 7.5f, 30.f, 151.f, kit::kMuted);
+            addText("no IP, no router settings.", 7.5f, 30.f, 140.f, kit::kMuted);
+            addButton(kit::button("Host room", {150.f, 28.f}, kit::Style::Primary, this, menu_selector(NexMenu::onHost), 10.f),
+                      16.f + 103.f, 92.f);
+        } else {
+            // Hosting needs the level's editor: explain how instead of a button.
+            addText("Hosting starts from the level itself:", 7.5f, 30.f, 162.f, kit::kMuted);
+            addText("1. Open your level in the editor", 8.f, 30.f, 140.f, kit::kText);
+            addText("2. Press Esc > NexLevel Collab", 8.f, 30.f, 122.f, kit::kText);
+            addText("3. Host room (level or safe copy)", 8.f, 30.f, 104.f, kit::kText);
+        }
         addText("Up to 16 players - encrypted", 7.f, 16.f + 103.f, 60.f, kit::kMuted, 0, {.5f, .5f});
 
         // Join card
@@ -186,7 +182,8 @@ void NexMenu::buildRoom() {
         add(m_codeInput, 238.f + 103.f, 132.f);
         addButton(kit::button("Paste", {60.f, 22.f}, kit::Style::Secondary, this, menu_selector(NexMenu::onPaste), 8.f), 286.f, 100.f);
         addButton(kit::button("Join", {100.f, 22.f}, kit::Style::Primary, this, menu_selector(NexMenu::onJoin), 9.f), 380.f, 100.f);
-        addText("Joining replaces the level open in your editor", 6.8f, 238.f + 103.f, 66.f, kit::kDanger, 0, {.5f, .5f});
+        if (m_fromEditor) addText("Joining replaces the level open in your editor", 6.8f, 238.f + 103.f, 66.f, kit::kDanger, 0, {.5f, .5f});
+        else addText("Opens the room in a new level - your levels are safe", 6.8f, 238.f + 103.f, 66.f, kit::kGood, 0, {.5f, .5f});
         addText("Everyone needs the same Geometry Dash version", 7.f, W / 2.f, 12.f, kit::kMuted, 0, {.5f, .5f});
         return;
     }
@@ -446,12 +443,15 @@ void NexMenu::onJoin(CCObject*) {
         return;
     }
     std::string error;
-    if (!SessionManager::get()->join(code, &error)) {
+    auto* sm = SessionManager::get();
+    const bool ok = m_fromEditor ? sm->join(code, &error) : sm->joinFromMenu(code, &error);
+    if (!ok) {
         notify(error, NotificationIcon::Error);
         return;
     }
     Mod::get()->setSavedValue<std::string>("last-code", code);
-    buildTab();
+    if (m_fromEditor) buildTab();
+    else this->onClose(nullptr);  // the editor opens for the room
 }
 
 void NexMenu::onPaste(CCObject*) {

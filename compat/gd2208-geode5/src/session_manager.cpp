@@ -143,6 +143,23 @@ bool SessionManager::makeHostCopy(std::string* error) {
     return true;
 }
 
+bool SessionManager::joinFromMenu(const std::string& roomCode, std::string* error) {
+    if (!join(roomCode, error)) return false;
+    auto* level = GameLevelManager::sharedState()->createNewLevel();
+    if (!level) {
+        leave();
+        if (error) *error = "Could not create a level for the room";
+        return false;
+    }
+    level->m_levelName = "NexLevel room";
+    level->m_levelDesc = "NexLevel collab room";
+    level->retain();
+    if (m_backupLevel) m_backupLevel->release();
+    m_backupLevel = level;  // this level is the player's copy of the room (autosave goes here)
+    CCDirector::sharedDirector()->replaceScene(CCTransitionFade::create(0.5f, LevelEditorLayer::scene(level, false)));
+    return true;
+}
+
 void SessionManager::leave() {
     if (m_host || m_client) saveNow(true, "leaving the room");
     if (m_host) {
@@ -486,6 +503,9 @@ void SessionManager::tick(float dt) {
                     m_lastJoined = true;
                     notify("Joined the room", NotificationIcon::Success);
                     m_roomDirty = true;  // first backup of the room soon after joining
+                    if (m_backupLevel && std::string(m_backupLevel->m_levelName) == "NexLevel room" && !m_client->peers().empty()) {
+                        m_backupLevel->m_levelName = ("NL - " + m_client->peers().front().name).substr(0, 20);
+                    }
                     if (m_editor) m_editor->rebuildFromSession();
                     ids.clear();
                 } else {
