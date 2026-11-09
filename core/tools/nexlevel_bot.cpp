@@ -18,6 +18,7 @@
 #include <nexlevel/core/relay/relay_server.hpp>
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
@@ -76,6 +77,8 @@ int runJoin(const std::string& code, int seconds) {
     else std::printf("[bot] room %s -> connecting to %s:%u ...\n", code.c_str(), addr->ipString().c_str(), addr->port);
 
     std::vector<NetId> mine;
+    std::optional<Clock::time_point> playStart;
+    std::uint16_t playSession = 0;
     std::size_t lastRoster = 0;
     int step = 0;
     auto start = Clock::now();
@@ -118,7 +121,7 @@ int runJoin(const std::string& code, int seconds) {
         }
 
         // Scripted building, one action every 1.5 s, near the start of the level.
-        if (Clock::now() >= nextAction && step < 11) {
+        if (Clock::now() >= nextAction && step < 11 && !playStart) {
             nextAction = Clock::now() + std::chrono::milliseconds(1500);
             if (step < 5) {
                 auto id = *client.newId();
@@ -139,9 +142,34 @@ int runJoin(const std::string& code, int seconds) {
                 client.submitLocal(Op::erase(mine[4]));
                 std::printf("[bot] deleted block 5\n");
             } else if (step == 9) {
+                playStart = Clock::now();
+                ++playSession;
+                std::printf("[bot] playtesting for 6 s - watch the icon and its trail in GD\n");
+            } else if (step == 10) {
                 std::printf("[bot] script done - now edit in GD and watch the changes arrive here\n");
             }
             ++step;
+        }
+        // Fake playtest: an icon flying over the level (cube -> ship -> wave), then stop.
+        if (playStart) {
+            const float t = std::chrono::duration<float>(Clock::now() - *playStart).count();
+            PlayerState ps;
+            ps.session = playSession;
+            if (t < 6.f) {
+                ps.flags = PlayerState::Playing;
+                ps.mode1 = t < 2.f ? 0 : (t < 4.f ? 1 : 4);
+                ps.x1 = 0.f + t * 311.f;  // ~ normal speed
+                ps.y1 = 105.f + (ps.mode1 == 0 ? 0.f : 60.f + 40.f * std::sin(t * 3.f));
+                ps.rot1 = ps.mode1 == 0 ? t * 360.f : 0.f;
+                client.setLocalPlayerState(ps);
+            } else {
+                ps.flags = 0;
+                ps.x1 = 6.f * 311.f;
+                ps.y1 = 105.f;
+                client.setLocalPlayerState(ps);
+                playStart.reset();
+                std::printf("[bot] playtest finished (the trail stays in GD)\n");
+            }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
