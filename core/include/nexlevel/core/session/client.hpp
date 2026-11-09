@@ -71,6 +71,9 @@ public:
     // Editor presence (where each player is looking). Sent at most ~10 times per second.
     void setLocalPresence(float x, float y, float zoom);
     std::vector<Presence> presences() const;  // other players only
+    // Room chat. takeChat(): lines received since the last call (this player's own included).
+    void sendChat(const std::string& text);
+    std::vector<ChatMessage> takeChat();
 
     ClientState state() const noexcept;
     const std::string& lastError() const noexcept;

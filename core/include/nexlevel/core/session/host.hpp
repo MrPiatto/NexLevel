@@ -76,6 +76,12 @@ public:
 
     // Remove a player: they get a Kicked notice and are disconnected. Returns false if not found.
     bool kick(sync::PeerId peer);
+    // Turn editing off/on for a player (their edits are undone on their side; they can still watch).
+    void setViewOnly(sync::PeerId peer, bool on);
+    bool isViewOnly(sync::PeerId peer) const;
+    // Room chat. takeChat(): lines received since the last call (the host's own included).
+    void sendChat(const std::string& text);
+    std::vector<ChatMessage> takeChat();
 
 private:
     struct Impl;

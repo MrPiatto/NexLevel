@@ -31,7 +31,8 @@ enum class MsgType : std::uint16_t {
     Pong = 16,            // answer to Ping (echoes it, says how long it waited before answering)
     PingTable = 17,       // host -> all: everyone's ping to the host
     PlayerState = 18,     // either way: a player's icon while they playtest (spectating + trail)
-    SnapshotChunkZ = 21,  // host -> joining client: SnapshotChunk, compressed (u32 raw size + LZ block)
+    SnapshotChunkZ = 21,
+    Chat = 22,            // client -> host: a chat line; host -> others: who said it + the line  // host -> joining client: SnapshotChunk, compressed (u32 raw size + LZ block)
     Sealed = 20,       // encrypted envelope around any of the above (see crypto/secure_channel.hpp)
 };
 
@@ -41,6 +42,7 @@ struct PeerInfo {
     sync::PeerId id = 0;
     std::string name;
     std::uint32_t accountId = 0;  // GD account (for the profile button); self-reported, 0 = none
+    bool viewOnly = false;        // the host turned off editing for this player
     bool operator==(const PeerInfo&) const = default;
 };
 struct Roster {
@@ -77,6 +79,11 @@ struct SnapshotEnd {
 struct Refuse {
     RefuseReason reason = RefuseReason::BadHello;
     GameTarget hostTarget = GameTarget::Unknown;
+};
+inline constexpr std::size_t kMaxChatLen = 200;
+struct ChatMessage {
+    sync::PeerId peer = 0;  // filled in by the host (never trusted from a client)
+    std::string text;
 };
 struct Rejected {
     std::uint32_t clientSeq = 0;
@@ -156,6 +163,10 @@ std::optional<SnapshotChunk> decodeSnapshotChunkZ(std::span<const std::uint8_t> 
 std::optional<SnapshotEnd> decodeSnapshotEnd(std::span<const std::uint8_t> p);
 std::optional<Refuse> decodeRefuse(std::span<const std::uint8_t> p);
 std::optional<Rejected> decodeRejected(std::span<const std::uint8_t> p);
+std::vector<std::uint8_t> encode(const ChatMessage& m);
+std::optional<ChatMessage> decodeChat(std::span<const std::uint8_t> p);
+// Chat text as shown: printable characters only, trimmed, at most kMaxChatLen.
+std::string cleanChatText(std::string_view text);
 std::optional<Roster> decodeRoster(std::span<const std::uint8_t> p);
 std::optional<sync::Op> decodeOpMsg(std::span<const std::uint8_t> p);
 

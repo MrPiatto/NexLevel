@@ -15,6 +15,8 @@
 #include <map>
 #include <deque>
 #include <mutex>
+#include <utility>
+#include <set>
 #include <thread>
 #include <unordered_map>
 #include <system_error>
@@ -54,6 +56,7 @@ struct SessionHost::Impl {
         double opTokens = kOpBurst;
         Clock::time_point lastPingAnswered{};
         Clock::time_point opRefill = Clock::now();
+        Clock::time_point lastChat{};
     };
     struct Identity {  // survives the connection, for reconnects
         sync::PeerId id = 0;
@@ -300,11 +303,20 @@ struct SessionHost::Impl {
         }
     }
     std::vector<PeerInfo> roster() const {
-        std::vector<PeerInfo> out{{kHostPeer, hostName, hostAccountId}};
+        std::vector<PeerInfo> out{{kHostPeer, hostName, hostAccountId, false}};
         for (auto& [_, p] : peers) {
-            if (p.joined) out.push_back({p.id, p.name, p.accountId});
+            if (p.joined) out.push_back({p.id, p.name, p.accountId, viewOnly.contains(p.id)});
         }
         return out;
+    }
+    std::set<sync::PeerId> viewOnly;   // players the host turned editing off for
+    std::vector<ChatMessage> chatInbox;
+
+    void broadcastChat(const ChatMessage& msg, std::uint32_t exceptConn) {
+        auto payload = encode(msg);
+        for (auto& [conn, p] : peers) {
+            if (p.joined && conn != exceptConn) sendTo(conn, MsgType::Chat, payload);
+        }
     }
     std::uint32_t hostAccountId = 0;
     Clock::time_point lastPingTable{};
@@ -482,6 +494,17 @@ struct SessionHost::Impl {
             broadcastPresence(*pr, conn);
             return;
         }
+        if (static_cast<MsgType>(f.type) == MsgType::Chat) {
+            auto msg = decodeChat(f.payload);
+            if (!msg) return;  // empty or malformed line: ignore
+            const auto now = Clock::now();
+            if (now - p.lastChat < std::chrono::milliseconds(300)) return;  // anti-spam
+            p.lastChat = now;
+            msg->peer = p.id;
+            chatInbox.push_back(*msg);
+            broadcastChat(*msg, conn);
+            return;
+        }
         if (static_cast<MsgType>(f.type) == MsgType::Submit) {
             const auto now = Clock::now();
             p.opTokens = std::min(kOpBurst, p.opTokens + std::chrono::duration<double>(now - p.opRefill).count() * kOpRefillPerSec);
@@ -502,6 +525,10 @@ struct SessionHost::Impl {
             return;
         }
         const auto clientSeq = op->clientSeq;
+        if (viewOnly.contains(p.id)) {  // editing turned off by the host: undo it on that player's side
+            sendTo(conn, MsgType::Rejected, encode(Rejected{clientSeq, 2}));
+            return;
+        }
         op->author = p.id;  // identity comes from the connection, never from the payload
         auto res = sequencer.submit(std::move(*op));
         if (res.sequenced) {
@@ -690,12 +717,28 @@ std::vector<Presence> SessionHost::presences() const {
     return out;
 }
 
+void SessionHost::setViewOnly(sync::PeerId peer, bool on) {
+    if (peer == kHostPeer) return;
+    const bool changed = on ? m->viewOnly.insert(peer).second : m->viewOnly.erase(peer) > 0;
+    if (changed) m->broadcastRoster();
+}
+bool SessionHost::isViewOnly(sync::PeerId peer) const { return m->viewOnly.contains(peer); }
+
+void SessionHost::sendChat(const std::string& text) {
+    ChatMessage msg{kHostPeer, cleanChatText(text)};
+    if (msg.text.empty()) return;
+    m->chatInbox.push_back(msg);
+    m->broadcastChat(msg, 0);
+}
+std::vector<ChatMessage> SessionHost::takeChat() { return std::exchange(m->chatInbox, {}); }
+
 bool SessionHost::kick(sync::PeerId peer) {
     for (auto it = m->peers.begin(); it != m->peers.end(); ++it) {
         if (it->second.joined && it->second.id == peer) {
             m->identities.erase(it->second.token);  // a kicked player cannot "reconnect"
             m->sendTo(it->first, MsgType::Kicked, {}, true);
             m->trails.erase(it->second.id);
+            m->viewOnly.erase(it->second.id);
             m->peers.erase(it);
             m->broadcastRoster();
             return true;

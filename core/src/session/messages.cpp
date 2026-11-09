@@ -88,6 +88,7 @@ std::vector<std::uint8_t> encode(const Roster& m) {
         w.u16(p.id);
         w.str(p.name.substr(0, kMaxDisplayName));
         w.u32(p.accountId);
+        w.u8(p.viewOnly ? 1 : 0);
     }
     return w.take();
 }
@@ -339,6 +340,34 @@ std::optional<Rejected> decodeRejected(std::span<const std::uint8_t> p) {
     if (!r.atEnd()) return std::nullopt;
     return m;
 }
+std::string cleanChatText(std::string_view text) {
+    std::string out;
+    for (char c : text) {
+        const auto u = static_cast<unsigned char>(c);
+        if (u >= 32 && u != 127) out += c;  // no control characters (UTF-8 bytes >= 128 are kept)
+        if (out.size() >= kMaxChatLen) break;
+    }
+    while (!out.empty() && out.back() == ' ') out.pop_back();
+    std::size_t start = 0;
+    while (start < out.size() && out[start] == ' ') ++start;
+    return out.substr(start);
+}
+std::vector<std::uint8_t> encode(const ChatMessage& m) {
+    ByteWriter w;
+    w.u16(m.peer);
+    w.str(m.text.substr(0, kMaxChatLen));
+    return w.take();
+}
+std::optional<ChatMessage> decodeChat(std::span<const std::uint8_t> p) {
+    ByteReader r(p);
+    ChatMessage m;
+    m.peer = r.u16();
+    m.text = r.str(kMaxChatLen);
+    if (!r.ok() || !r.atEnd()) return std::nullopt;
+    m.text = cleanChatText(m.text);
+    if (m.text.empty()) return std::nullopt;
+    return m;
+}
 std::optional<Roster> decodeRoster(std::span<const std::uint8_t> p) {
     ByteReader r(p);
     Roster m;
@@ -349,6 +378,7 @@ std::optional<Roster> decodeRoster(std::span<const std::uint8_t> p) {
         pi.id = r.u16();
         pi.name = r.str(kMaxDisplayName);
         pi.accountId = r.u32();
+        pi.viewOnly = r.u8() != 0;
         if (!r.ok()) return std::nullopt;
         m.peers.push_back(std::move(pi));
     }

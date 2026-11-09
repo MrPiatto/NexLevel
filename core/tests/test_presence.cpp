@@ -82,6 +82,57 @@ void testPresence() {
     host.stop();
 }
 
+void testChatAndViewOnly() {
+    SessionHost host(GameTarget::GD2208, "Host");
+    auto port = host.start(0, true);
+    CHECK(port.has_value());
+    if (!port) return;
+    SessionClient a(GameTarget::GD2208, "A");
+    SessionClient b(GameTarget::GD2208, "B");
+    a.connect("127.0.0.1", *port, host.roomKey());
+    b.connect("127.0.0.1", *port, host.roomKey());
+    std::vector<ChatMessage> hostLines, aLines, bLines;
+    auto pumpAll = [&] {
+        host.pump(); a.pump(); b.pump();
+        for (auto& l : host.takeChat()) hostLines.push_back(l);
+        for (auto& l : a.takeChat()) aLines.push_back(l);
+        for (auto& l : b.takeChat()) bLines.push_back(l);
+    };
+    CHECK(waitFor(pumpAll, [&] { return a.state() == ClientState::Joined && b.state() == ClientState::Joined; }, 3000));
+
+    // Chat: everyone gets the line once, with the sender's real id; control characters are stripped.
+    a.sendChat("  hi\x01 all ");
+    host.sendChat("welcome");
+    CHECK(waitFor(pumpAll, [&] { return hostLines.size() == 2 && aLines.size() == 2 && bLines.size() == 2; }, 3000));
+    bool fromA = false;
+    for (auto& l : bLines) fromA = fromA || (l.peer == *a.peerId() && l.text == "hi all");
+    CHECK(fromA);
+    a.sendChat("   ");  // empty lines are never sent
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    pumpAll();
+    CHECK(bLines.size() == 2);
+
+    // View only: the player's edits are refused and undone; the roster says so.
+    host.setViewOnly(*a.peerId(), true);
+    CHECK(waitFor(pumpAll, [&] {
+        for (auto& p : a.peers()) if (p.id == *a.peerId()) return p.viewOnly;
+        return false;
+    }, 3000));
+    auto id = a.newId();
+    CHECK(id.has_value());
+    if (id) a.submitLocal(sync::Op::create(*id, sync::PropMap{{1, "1"}}));
+    CHECK(waitFor(pumpAll, [&] { return a.replica() && a.replica()->view().find(*id) == nullptr && a.replica()->pending().empty(); }, 3000));
+    CHECK(host.state().find(*id) == nullptr);
+    host.setViewOnly(*a.peerId(), false);
+    auto id2 = a.newId();
+    if (id2) a.submitLocal(sync::Op::create(*id2, sync::PropMap{{1, "1"}}));
+    CHECK(waitFor(pumpAll, [&] { return host.state().find(*id2) != nullptr; }, 3000));
+    host.stop();
+}
+
 } // namespace
 
-void runPresenceTests() { testPresence(); }
+void runPresenceTests() {
+    testPresence();
+    testChatAndViewOnly();
+}

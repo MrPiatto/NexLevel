@@ -13,6 +13,7 @@
 #include <future>
 #include <set>
 #include <system_error>
+#include <utility>
 
 namespace nexlevel::session {
 
@@ -64,6 +65,7 @@ struct SessionClient::Impl {
     Clock::time_point nextRetry{};
     bool identityReset = false;
     std::map<sync::PeerId, Presence> presences;
+    std::vector<ChatMessage> chatInbox;
     RttTracker rtt;
     std::map<sync::PeerId, std::uint16_t> pingTable;
     std::map<sync::PeerId, PlayTrail> trails;
@@ -436,6 +438,8 @@ std::vector<sync::NetId> SessionClient::pump() {
                     if (auto pr = decodePresence(e.frame.payload)) {
                         if (!m->replica || pr->peer != m->replica->self()) m->presences[pr->peer] = *pr;
                     }
+                } else if (type == MsgType::Chat) {
+                    if (auto msg = decodeChat(e.frame.payload)) m->chatInbox.push_back(std::move(*msg));
                 } else if (type == MsgType::Kicked) {
                     m->state = ClientState::Kicked;
                     m->peers.clear();
@@ -497,6 +501,15 @@ void SessionClient::setLocalPresence(float x, float y, float zoom) {
     m->lastSentPresence = pr;
     m->send(MsgType::PresenceUpdate, encode(pr));
 }
+
+void SessionClient::sendChat(const std::string& text) {
+    if (m->state != ClientState::Joined || !m->replica) return;
+    ChatMessage msg{m->replica->self(), cleanChatText(text)};
+    if (msg.text.empty()) return;
+    m->send(MsgType::Chat, encode(msg));
+    m->chatInbox.push_back(std::move(msg));  // shown right away; the host relays it to the others
+}
+std::vector<ChatMessage> SessionClient::takeChat() { return std::exchange(m->chatInbox, {}); }
 
 std::vector<Presence> SessionClient::presences() const {
     std::vector<Presence> out;
