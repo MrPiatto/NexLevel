@@ -7,6 +7,13 @@
 	"name": "NexLevel",
 	"version": "v1.0.0",
 	"developer": "Forg3 Studios",
+	"links": {
+		"homepage": "https://github.com/MrPiatto/NexLevel",
+		"issues": {
+			"info": "Report bugs on the NexLevel page (include your Geode log)",
+			"url": "https://github.com/MrPiatto/NexLevel/issues"
+		}
+	},
 	"description": "Create Together. Build Beyond. Real-time collaborative level editing with your friends.",
 	"settings": {
 		"relay-server": {
