@@ -28,7 +28,7 @@ Tabs: **Room** (code, players, objects, uptime, restore points), **Players** (pi
 ## Privacy and online connections
 NexLevel does **not** collect, upload or sell any data, and has no analytics.
 - **Who sees what:** the people in your room see your GD username, your GD account ID (for the profile button), where you are looking in the editor, your playtest icon and your chat messages. Nothing is shared outside your room.
-- **Relay servers:** to work on any network (including mobile data), rooms go through a Forg3 Studios relay server (official list, or your own one set in the settings). The relay only forwards **encrypted** data: it cannot read levels, names or chat. Like any server, it sees your IP address to connect you; it keeps only connection counts, no logs of IPs.
+- **Relay servers:** to work on any network (including mobile data), rooms go through a Forg3 Studios relay server (official list, or your own one set in the settings). The relay only forwards **encrypted** data: it cannot read levels, names or chat. Like any server, it sees your IP address to connect you; IPs are used only in memory for anti-abuse limits and are never logged or stored; the relay log has connection counts only.
 - **Direct connections:** without a relay, players connect to the host directly (UPnP or same Wi-Fi), so the host's and players' IPs are visible to each other's computers, as in any online game. Your IP is hidden in the menu until you tap Show.
 - **Encryption:** all room traffic is end-to-end encrypted (X25519 + XChaCha20-Poly1305).
 - **Local files only:** settings, autosaves and restore points are saved on your PC.
