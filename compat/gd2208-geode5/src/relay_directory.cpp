@@ -20,7 +20,9 @@ namespace {
 
 // Official relays shipped with this build (filled in once they are online).
 const std::vector<relay::RelayEndpoint>& builtinRelays() {
-    static const std::vector<relay::RelayEndpoint> list = {};
+    static const std::vector<relay::RelayEndpoint> list = {
+        {1, "EU-1", "13.48.10.137", relay::kDefaultPort},  // Forg3 Studios, AWS Stockholm
+    };
     return list;
 }
 
