@@ -5,7 +5,7 @@ Nothing counts as supported until it passes here. Use `tools\bot.ps1` when there
 | # | Test | How | Pass when |
 |---|---|---|---|
 | 1 | Core | `tools\test-core.ps1` | `0 failed` |
-| 2 | Build | `tools\build.ps1 -Target gd2208` | builds, GD loads `NexLevel loaded ... protocol v6` |
+| 2 | Build | `tools\build.ps1 -Target gd2208` | builds, GD loads `NexLevel loaded ... protocol v7` |
 | 3 | Host + join | Host room, Copy, `tools\bot.ps1 join` | bot's 5 blocks appear; move, rotate, colour, delete arrive; no crash |
 | 4 | Host edits reach players | Place/move/delete while the bot is in the room | bot prints each change |
 | 5 | Level settings | Change a colour channel, background, ground, song | a second player sees the same; the same after leaving and rejoining |
@@ -18,4 +18,6 @@ Nothing counts as supported until it passes here. Use `tools\bot.ps1` when there
 | 12 | Undo / redo / copy-paste | Do each with a player in the room | the player ends up with the same level |
 | 13 | Quit while hosting | Close GD with a room open | no crash |
 | 15 | Ping / Info | Collab menu with the bot in the room; press Info | ping shows in ms; graph moves; IP hidden until Show; profile button opens the GD profile |
+| 16 | Watch playtests | Player A playtests while B stays in the editor | B sees A's icon move (right mode: ship, ball...), a trail in A's colour that stays after A stops; a new test starts a new trail |
+| 17 | Everything syncs | Use undo/redo, copy/paste, duplicate, align, edit group, trigger settings, text objects, keyframes, select-all + move | the other player ends up with an identical level (also check after 10 s for sweep corrections in the log) |
 | 14 | Real distance | A friend on another network (ideally mobile data) via relay | joins and edits |

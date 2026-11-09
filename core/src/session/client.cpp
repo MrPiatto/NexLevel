@@ -4,6 +4,7 @@
 
 #include <nexlevel/core/crypto/secure_channel.hpp>
 #include <nexlevel/core/relay/protocol.hpp>
+#include <nexlevel/core/session/playtest.hpp>
 #include <nexlevel/core/session/room_code.hpp>
 #include <nexlevel/core/net/local_address.hpp>
 
@@ -64,6 +65,9 @@ struct SessionClient::Impl {
     std::map<sync::PeerId, Presence> presences;
     RttTracker rtt;
     std::map<sync::PeerId, std::uint16_t> pingTable;
+    std::map<sync::PeerId, PlayTrail> trails;
+    Clock::time_point lastPlayerStateSent{};
+    std::uint8_t lastPlayerFlags = 0;
     std::uint32_t accountId = 0;
     std::optional<ConnectTarget> via;
     std::optional<Presence> lastSentPresence;
@@ -197,6 +201,9 @@ struct SessionClient::Impl {
             return;
         }
         error = reason;
+        // Connected and said hello, then the host hung up without a word: almost always an
+        // older/newer NexLevel (the frame protocol differs, so it cannot even send a refusal).
+        if (helloSent && !hasJoinedBefore() && !channel) error = "host closed the connection while joining (different NexLevel version?)";
         if (hasJoinedBefore() && reconnectAttempts < kMaxReconnectAttempts) {
             state = ClientState::Reconnecting;
             ++reconnectAttempts;
@@ -398,12 +405,21 @@ std::vector<sync::NetId> SessionClient::pump() {
                 } else if (type == MsgType::Roster) {
                     if (auto r = decodeRoster(e.frame.payload)) {
                         m->peers = std::move(r->peers);
-                        // Forget where players who left were.
+                        // Forget where players who left were (and their playtest trails).
                         for (auto it = m->presences.begin(); it != m->presences.end();) {
                             bool present = false;
                             for (auto& peer : m->peers) present = present || peer.id == it->first;
                             it = present ? std::next(it) : m->presences.erase(it);
                         }
+                        for (auto it = m->trails.begin(); it != m->trails.end();) {
+                            bool present = false;
+                            for (auto& peer : m->peers) present = present || peer.id == it->first;
+                            it = present ? std::next(it) : m->trails.erase(it);
+                        }
+                    }
+                } else if (type == MsgType::PlayerState) {
+                    if (auto st = decodePlayerState(e.frame.payload)) {
+                        if (!m->replica || st->peer != m->replica->self()) recordPlayerState(m->trails, *st);
                     }
                 } else if (type == MsgType::Ping) {
                     if (auto ping = decodePing(e.frame.payload)) m->send(MsgType::Pong, encode(answer(*ping, e.at)));
@@ -456,6 +472,18 @@ void SessionClient::setAccountId(std::uint32_t accountId) { m->accountId = accou
 PingStats SessionClient::pingStats() const { return m->rtt.stats(); }
 std::map<sync::PeerId, std::uint16_t> SessionClient::pingTable() const { return m->pingTable; }
 std::optional<ConnectTarget> SessionClient::connectedVia() const { return m->via; }
+
+void SessionClient::setLocalPlayerState(PlayerState st) {
+    if (m->state != ClientState::Joined || !validPlayerState(st)) return;
+    const auto now = Clock::now();
+    if (st.flags == m->lastPlayerFlags && now - m->lastPlayerStateSent < std::chrono::milliseconds(33)) return;
+    m->lastPlayerStateSent = now;
+    m->lastPlayerFlags = st.flags;
+    st.peer = 0;
+    m->send(MsgType::PlayerState, encode(st));
+}
+
+const std::map<sync::PeerId, PlayTrail>& SessionClient::playTrails() const noexcept { return m->trails; }
 
 void SessionClient::setLocalPresence(float x, float y, float zoom) {
     if (m->state != ClientState::Joined) return;

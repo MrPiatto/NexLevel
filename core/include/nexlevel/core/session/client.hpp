@@ -3,6 +3,7 @@
 // Same threading model as SessionHost: call pump() once per frame on the game's main thread.
 #include <nexlevel/core/session/messages.hpp>
 #include <nexlevel/core/session/ping.hpp>
+#include <nexlevel/core/session/playtest.hpp>
 #include <nexlevel/core/relay/protocol.hpp>
 #include <nexlevel/core/sync/client_replica.hpp>
 
@@ -61,6 +62,11 @@ public:
     PingStats pingStats() const;                              // round trip to the host
     std::map<sync::PeerId, std::uint16_t> pingTable() const;  // everyone's ping to the host (ms)
     std::optional<ConnectTarget> connectedVia() const;        // address of the current connection
+
+    // Playtest spectating: send this player's icon while testing (rate limited inside);
+    // the others' icons and trails.
+    void setLocalPlayerState(PlayerState state);
+    const std::map<sync::PeerId, PlayTrail>& playTrails() const noexcept;
 
     // Editor presence (where each player is looking). Sent at most ~10 times per second.
     void setLocalPresence(float x, float y, float zoom);

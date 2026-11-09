@@ -18,10 +18,6 @@ namespace {
 constexpr float W = 460.f, H = 290.f;
 constexpr float kContentTop = H - 84.f;  // below header + tab bar
 
-const ccColor3B kPeerColors[] = {
-    {140, 90, 255}, {20, 200, 180}, {255, 110, 200}, {90, 230, 150}, {255, 200, 80}, {255, 120, 120}, {120, 160, 255}, {200, 255, 110},
-};
-ccColor3B peerColor(std::uint16_t id) { return kPeerColors[id % (sizeof(kPeerColors) / sizeof(kPeerColors[0]))]; }
 
 std::string msText(float v) {
     char b[32];
@@ -229,7 +225,7 @@ void NexMenu::buildPlayers() {
         const auto& p = peers[i];
         const float y = kContentTop - 26.f - static_cast<float>(i) * 29.f;
         add(kit::card({428.f, 25.f}, 8.f, kit::rgba(30, 34, 66, i % 2 ? .55f : .85f), kit::rgba(kit::kViolet, .15f), .5f), W / 2.f, y);
-        add(kit::avatar(p.name, peerColor(p.id), 9.f), 32.f, y);
+        add(kit::avatar(p.name, ui::peerColor(p.id), 9.f), 32.f, y);
         auto* name = addText(p.name, 9.f, 48.f, y, kit::kText, 1);
         if (name->getContentSize().width > 120.f) name->setScale(120.f / name->getContentSize().width);
         float chipX = 48.f + std::min(name->getContentSize().width * name->getScale(), 120.f) + 6.f;
@@ -305,30 +301,31 @@ void NexMenu::buildSettings() {
     } rows[] = {
         {"show-ping", "Ping in the editor", "Your ping, shown at the top while you are in a room"},
         {"show-frames", "Players' view", "A coloured frame with each player's name where they work"},
+        {"show-trails", "Watch playtests", "See others play in your editor and the trail they leave, in their colour"},
     };
-    float y = kContentTop - 22.f;
-    for (int i = 0; i < 2; ++i, y -= 42.f) {
-        add(kit::card({428.f, 36.f}, 10.f, glass, edge, .6f), W / 2.f, y);
-        addText(rows[i].title, 9.5f, 32.f, y + 6.f, kit::kText, 1);
-        addText(rows[i].desc, 7.f, 32.f, y - 7.f, kit::kMuted);
+    float y = kContentTop - 18.f;
+    for (int i = 0; i < 3; ++i, y -= 37.f) {
+        add(kit::card({428.f, 32.f}, 10.f, glass, edge, .6f), W / 2.f, y);
+        addText(rows[i].title, 9.f, 32.f, y + 6.f, kit::kText, 1);
+        addText(rows[i].desc, 6.8f, 32.f, y - 6.f, kit::kMuted);
         auto* toggle = kit::Toggle::create(Mod::get()->getSettingValue<bool>(rows[i].key));
         auto* item = CCMenuItemSpriteExtra::create(toggle, this, menu_selector(NexMenu::onToggleSetting));
         item->m_scaleMultiplier = 1.05f;
         item->setTag(i);
         addButton(item, W - 44.f, y);
     }
-    // Relay server
-    add(kit::card({428.f, 58.f}, 10.f, glass, edge, .6f), W / 2.f, y - 10.f);
-    addText("Relay server", 9.5f, 32.f, y + 8.f, kit::kText, 1);
-    addText("Rooms through a relay work on any network, including mobile data", 7.f, 32.f, y - 5.f, kit::kMuted);
-    add(kit::card({250.f, 20.f}, 7.f, kit::rgba(12, 14, 30, 1.f), kit::rgba(kit::kTeal, .4f), .6f), 32.f + 125.f, y - 24.f);
-    m_relayInput = TextInput::create(240.f, "host or host:port (empty = off)", "chatFont.fnt");
+    // Private relay
+    add(kit::card({428.f, 52.f}, 10.f, glass, edge, .6f), W / 2.f, y - 10.f);
+    addText("Private relay (optional)", 9.f, 32.f, y + 7.f, kit::kText, 1);
+    addText("Leave empty to use the official relays", 6.8f, 32.f, y - 5.f, kit::kMuted);
+    add(kit::card({250.f, 18.f}, 7.f, kit::rgba(12, 14, 30, 1.f), kit::rgba(kit::kTeal, .4f), .6f), 32.f + 125.f, y - 22.f);
+    m_relayInput = TextInput::create(240.f, "host or host:port (empty = official relays)", "chatFont.fnt");
     m_relayInput->hideBG();
     m_relayInput->setFilter("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:");
     m_relayInput->setMaxCharCount(64);
     m_relayInput->setString(Mod::get()->getSettingValue<std::string>("relay-server"));
-    add(m_relayInput, 32.f + 125.f, y - 24.f);
-    addButton(kit::button("Save", {60.f, 20.f}, kit::Style::Primary, this, menu_selector(NexMenu::onSaveRelay), 8.f), 330.f, y - 24.f);
+    add(m_relayInput, 32.f + 125.f, y - 22.f);
+    addButton(kit::button("Save", {60.f, 18.f}, kit::Style::Primary, this, menu_selector(NexMenu::onSaveRelay), 8.f), 330.f, y - 22.f);
     addText("NexLevel " + Mod::get()->getVersion().toVString() + "  -  protocol v" + std::to_string(kProtocolVersion), 6.5f, W / 2.f, 12.f,
             kit::kMuted, 0, {.5f, .5f});
 }
@@ -480,10 +477,10 @@ void NexMenu::onToggleIp(CCObject*) {
 }
 
 void NexMenu::onToggleSetting(CCObject* sender) {
-    static const char* keys[] = {"show-ping", "show-frames"};
+    static const char* keys[] = {"show-ping", "show-frames", "show-trails"};
     auto* item = static_cast<CCMenuItemSpriteExtra*>(sender);
     const int i = item->getTag();
-    if (i < 0 || i > 1) return;
+    if (i < 0 || i > 2) return;
     const bool on = !Mod::get()->getSettingValue<bool>(keys[i]);
     Mod::get()->setSettingValue<bool>(keys[i], on);
     if (auto* t = typeinfo_cast<kit::Toggle*>(item->getNormalImage())) t->setOn(on);

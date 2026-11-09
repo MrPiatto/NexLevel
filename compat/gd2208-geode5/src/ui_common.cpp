@@ -22,6 +22,13 @@ CCSprite* optionalSprite(const char* frameName) {
     return CCSprite::createWithSpriteFrameName(frameName);
 }
 
+ccColor3B peerColor(std::uint16_t peer) {
+    static const ccColor3B colors[] = {
+        {140, 90, 255}, {20, 200, 180}, {255, 110, 200}, {90, 230, 150}, {255, 200, 80}, {255, 120, 120}, {120, 160, 255}, {200, 255, 110},
+    };
+    return colors[peer % (sizeof(colors) / sizeof(colors[0]))];
+}
+
 ccColor3B pingColor(int ms) {
     if (ms < 70) return {110, 255, 140};
     if (ms < 150) return {255, 220, 90};

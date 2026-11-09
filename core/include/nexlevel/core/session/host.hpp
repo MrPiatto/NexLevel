@@ -4,8 +4,10 @@
 // inside pump() (call it once per frame from the game's main thread). Nothing here blocks.
 #include <nexlevel/core/session/messages.hpp>
 #include <nexlevel/core/session/ping.hpp>
+#include <nexlevel/core/session/playtest.hpp>
 #include <nexlevel/core/sync/host_sequencer.hpp>
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -60,6 +62,11 @@ public:
     void setAccountId(std::uint32_t accountId);
     // A player's round-trip time to the host (nullopt if not in the room).
     std::optional<PingStats> pingStats(sync::PeerId peer) const;
+
+    // Playtest spectating: send this player's icon while testing (rate limited inside);
+    // the others' icons and trails.
+    void setLocalPlayerState(PlayerState state);
+    const std::map<sync::PeerId, PlayTrail>& playTrails() const noexcept;
 
     // Editor presence (where each player is looking). Sent at most ~10 times per second.
     void setLocalPresence(float x, float y, float zoom);

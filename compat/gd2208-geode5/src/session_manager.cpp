@@ -159,6 +159,18 @@ std::vector<session::Presence> SessionManager::presences() const {
     return {};
 }
 
+void SessionManager::setLocalPlayerState(const session::PlayerState& state) {
+    if (m_host) m_host->setLocalPlayerState(state);
+    else if (m_client) m_client->setLocalPlayerState(state);
+}
+
+const std::map<sync::PeerId, session::PlayTrail>& SessionManager::playTrails() const {
+    static const std::map<sync::PeerId, session::PlayTrail> none;
+    if (m_host) return m_host->playTrails();
+    if (m_client) return m_client->playTrails();
+    return none;
+}
+
 std::string SessionManager::peerName(sync::PeerId peer) const {
     for (auto& p : peers()) {
         if (p.id == peer) return p.name;
@@ -467,6 +479,7 @@ void SessionManager::tick(float) {
                 // Friendly wording: players never see addresses or socket errors (they are in the log).
                 log::warn("NexLevel: connection lost: {}", m_client->lastError());
                 endClient(m_lastJoined ? "Connection to the room lost"
+                          : m_client->lastError().find("different NexLevel version") != std::string::npos ? "Couldn't join - you and the host need the same NexLevel version"
                           : m_client->lastError().find("did not answer") != std::string::npos ? "The host isn't responding - try again"
                           : m_client->lastError().find("relay: relay busy") != std::string::npos ? "The relay is busy - try again in a minute"
                           : "Room not found - check the code",

@@ -20,6 +20,8 @@ CCMenuItemSpriteExtra* button(const char* caption, cocos2d::ccColor3B color, flo
 // A sprite from GD's sheets, or nullptr if this GD build does not have it (never crash on a name).
 cocos2d::CCSprite* optionalSprite(const char* frameName);
 
+// Each player's colour, the same everywhere: avatar, view frame, playtest icon and trail.
+cocos2d::ccColor3B peerColor(std::uint16_t peer);
 cocos2d::ccColor3B pingColor(int ms);
 cocos2d::ccColor3B qualityColor(session::Quality q);
 const char* qualityIcon(session::Quality q);  // GD difficulty face frame name, may be missing

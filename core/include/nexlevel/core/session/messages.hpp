@@ -30,6 +30,7 @@ enum class MsgType : std::uint16_t {
     Ping = 15,            // either way, every second: measure round-trip time
     Pong = 16,            // answer to Ping (echoes it, says how long it waited before answering)
     PingTable = 17,       // host -> all: everyone's ping to the host
+    PlayerState = 18,     // either way: a player's icon while they playtest (spectating + trail)
     Sealed = 20,       // encrypted envelope around any of the above (see crypto/secure_channel.hpp)
 };
 
@@ -89,6 +90,19 @@ struct Presence {
 };
 bool validPresence(const Presence& p) noexcept;
 
+// A playtesting player's icon(s), streamed ~30 times per second so the others see them play.
+struct PlayerState {
+    enum Flags : std::uint8_t { Playing = 1, Dead = 2, Dual = 4, UpsideDown1 = 8, UpsideDown2 = 16 };
+    sync::PeerId peer = 0;      // filled by the host
+    std::uint16_t session = 0;  // changes on every new playtest (a new trail starts)
+    std::uint8_t flags = 0;
+    std::uint8_t mode1 = 0, mode2 = 0;  // GD IconType (cube, ship, ball, ufo, wave, robot, spider, swing...)
+    float x1 = 0, y1 = 0, rot1 = 0, scale1 = 1;
+    float x2 = 0, y2 = 0, rot2 = 0, scale2 = 1;
+    bool playing() const noexcept { return flags & Playing; }
+};
+bool validPlayerState(const PlayerState& s) noexcept;
+
 struct Ping {
     std::uint32_t seq = 0;
     std::uint64_t sentMicros = 0;  // sender's clock, echoed back
@@ -112,6 +126,7 @@ std::vector<std::uint8_t> encode(const Presence& m);
 std::vector<std::uint8_t> encode(const Ping& m);
 std::vector<std::uint8_t> encode(const Pong& m);
 std::vector<std::uint8_t> encode(const PingTable& m);
+std::vector<std::uint8_t> encode(const PlayerState& m);
 std::vector<std::uint8_t> encode(const Welcome& m);
 std::vector<std::uint8_t> encode(const SnapshotEnd& m);
 std::vector<std::uint8_t> encode(const Refuse& m);
@@ -127,6 +142,7 @@ std::optional<Presence> decodePresence(std::span<const std::uint8_t> p);
 std::optional<Ping> decodePing(std::span<const std::uint8_t> p);
 std::optional<Pong> decodePong(std::span<const std::uint8_t> p);
 std::optional<PingTable> decodePingTable(std::span<const std::uint8_t> p);
+std::optional<PlayerState> decodePlayerState(std::span<const std::uint8_t> p);
 std::optional<Welcome> decodeWelcome(std::span<const std::uint8_t> p);
 std::optional<SnapshotChunk> decodeSnapshotChunk(std::span<const std::uint8_t> p);
 std::optional<SnapshotEnd> decodeSnapshotEnd(std::span<const std::uint8_t> p);

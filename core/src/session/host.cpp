@@ -4,6 +4,7 @@
 
 #include <nexlevel/core/crypto/secure_channel.hpp>
 #include <nexlevel/core/relay/protocol.hpp>
+#include <nexlevel/core/session/playtest.hpp>
 #include <nexlevel/core/session/room_code.hpp>
 
 #include <algorithm>
@@ -43,6 +44,8 @@ struct SessionHost::Impl {
         std::optional<crypto::SecureChannel> channel;  // set once the key exchange is done
         std::optional<Presence> presence;
         Clock::time_point lastPresence{};
+        Clock::time_point lastPlayerState{};
+        std::uint8_t lastPlayerFlags = 0;
     };
     struct Identity {  // survives the connection, for reconnects
         sync::PeerId id = 0;
@@ -290,6 +293,17 @@ struct SessionHost::Impl {
         }
     }
 
+    std::map<sync::PeerId, PlayTrail> trails;  // other players' playtests (host is not stored)
+    Clock::time_point lastHostPlayerState{};
+    std::uint8_t lastHostPlayerFlags = 0;
+
+    void broadcastPlayerState(const PlayerState& st, std::uint32_t exceptConn) {
+        auto payload = encode(st);
+        for (auto& [conn, p] : peers) {
+            if (p.joined && conn != exceptConn) sendTo(conn, MsgType::PlayerState, payload);
+        }
+    }
+
     std::optional<Presence> hostPresence;
     Clock::time_point lastHostPresence{};
 
@@ -397,6 +411,19 @@ struct SessionHost::Impl {
     }
 
     void handleSecureFrame(std::uint32_t conn, Peer& p, const Frame& f, Clock::time_point arrival, std::vector<sync::NetId>& changed) {
+        if (static_cast<MsgType>(f.type) == MsgType::PlayerState) {
+            auto st = decodePlayerState(f.payload);
+            if (!st) { closeConn(conn, "malformed player state"); return; }
+            const auto now = Clock::now();
+            // Rate limit, but never drop a start/stop of a test.
+            if (st->flags == p.lastPlayerFlags && now - p.lastPlayerState < std::chrono::milliseconds(25)) return;
+            p.lastPlayerState = now;
+            p.lastPlayerFlags = st->flags;
+            st->peer = p.id;
+            recordPlayerState(trails, *st);
+            broadcastPlayerState(*st, conn);
+            return;
+        }
         if (static_cast<MsgType>(f.type) == MsgType::Ping) {
             if (auto ping = decodePing(f.payload)) sendTo(conn, MsgType::Pong, encode(answer(*ping, arrival)));
             return;
@@ -539,6 +566,7 @@ std::vector<sync::NetId> SessionHost::pump() {
                         id->second.leftAt = Clock::now();
                     }
                 }
+                m->trails.erase(it->second.id);
                 m->peers.erase(it);
                 if (wasJoined) m->broadcastRoster();
                 break;
@@ -577,6 +605,18 @@ std::optional<PingStats> SessionHost::pingStats(sync::PeerId peer) const {
     return std::nullopt;
 }
 
+void SessionHost::setLocalPlayerState(PlayerState st) {
+    st.peer = kHostPeer;
+    if (!validPlayerState(st)) return;
+    const auto now = Clock::now();
+    if (st.flags == m->lastHostPlayerFlags && now - m->lastHostPlayerState < std::chrono::milliseconds(33)) return;
+    m->lastHostPlayerState = now;
+    m->lastHostPlayerFlags = st.flags;
+    m->broadcastPlayerState(st, 0);
+}
+
+const std::map<sync::PeerId, PlayTrail>& SessionHost::playTrails() const noexcept { return m->trails; }
+
 void SessionHost::setLocalPresence(float x, float y, float zoom) {
     Presence pr{kHostPeer, x, y, zoom};
     if (!validPresence(pr) || (m->hostPresence && *m->hostPresence == pr)) return;
@@ -600,6 +640,7 @@ bool SessionHost::kick(sync::PeerId peer) {
         if (it->second.joined && it->second.id == peer) {
             m->identities.erase(it->second.token);  // a kicked player cannot "reconnect"
             m->sendTo(it->first, MsgType::Kicked, {}, true);
+            m->trails.erase(it->second.id);
             m->peers.erase(it);
             m->broadcastRoster();
             return true;

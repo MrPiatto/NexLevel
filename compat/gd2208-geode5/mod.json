@@ -36,6 +36,12 @@
 			"name": "Relay directory URL",
 			"description": "Where NexLevel downloads the list of official relays. Leave as is unless you run your own network.",
 			"default": ""
+		},
+		"show-trails": {
+			"type": "bool",
+			"name": "Show playtests",
+			"description": "When someone playtests, watch their icon play in your editor and see the trail they leave, in their colour.",
+			"default": true
 		}
 	},
 	"tags": [

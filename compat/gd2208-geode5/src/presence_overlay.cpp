@@ -1,9 +1,12 @@
-// cocos2d APIs used: CCDrawNode::create/clear/drawPolygon, CCLabelBMFont, CCNode::convertToNodeSpace,
-// CCDirector::getWinSize. GD: GJBaseGameLayer::m_objectLayer (bindings 2.2081).
+// cocos2d APIs used: CCDrawNode::create/clear/drawPolygon/drawSegment, CCLabelBMFont,
+// CCNode::convertToNodeSpace, CCDirector::getWinSize.
+// GD (bindings 2.2081): GJBaseGameLayer::m_objectLayer, SimplePlayer::create / updatePlayerFrame / setColor.
 #include "presence_overlay.hpp"
 
 #include "session_manager.hpp"
+#include "ui_common.hpp"
 
+#include <chrono>
 #include <cmath>
 #include <map>
 
@@ -15,11 +18,18 @@ namespace {
 
 constexpr int kOverlayTag = 0x4E584C;  // "NXL"
 
-const ccColor3B kColors[] = {
-    {196, 120, 255}, {80, 220, 255}, {255, 110, 200}, {120, 255, 160},
-    {255, 200, 80},  {255, 120, 120}, {150, 160, 255}, {220, 255, 110},
+ccColor3B colorFor(sync::PeerId peer) { return ui::peerColor(peer); }
+
+// One playtesting player as seen from the editor: their trail and their icon(s).
+struct TrailView {
+    CCDrawNode* draw = nullptr;
+    SimplePlayer* icon1 = nullptr;
+    SimplePlayer* icon2 = nullptr;
+    CCLabelBMFont* name = nullptr;
+    std::uint16_t session = 0xFFFF;
+    std::size_t drawn1 = 0, drawn2 = 0;
+    int mode1 = -1, mode2 = -1;
 };
-ccColor3B colorFor(sync::PeerId peer) { return kColors[peer % (sizeof(kColors) / sizeof(kColors[0]))]; }
 
 struct Shown {
     float x = 0, y = 0, zoom = 1;
@@ -40,9 +50,94 @@ public:
 
     bool init() override {
         if (!CCNode::init()) return false;
+        m_trailLayer = CCNode::create();
+        this->addChild(m_trailLayer, 0);
+        m_frameLayer = CCNode::create();
+        this->addChild(m_frameLayer, 1);
         m_draw = CCDrawNode::create();
-        this->addChild(m_draw);
+        m_frameLayer->addChild(m_draw);
         return true;
+    }
+
+    void showFrames(bool on) { m_frameLayer->setVisible(on); }
+    void showTrails(bool on) { m_trailLayer->setVisible(on); }
+
+    // Other players' playtests: trails grow incrementally (only new segments are drawn).
+    void redrawPlaytests(float myZoom) {
+        auto* sm = SessionManager::get();
+        const auto& trails = sm->playTrails();
+        const auto now = std::chrono::steady_clock::now();
+        for (auto& [peer, t] : trails) {
+            auto& v = m_trails[peer];
+            const auto c = colorFor(peer);
+            if (!v.draw) {
+                v.draw = CCDrawNode::create();
+                m_trailLayer->addChild(v.draw, 0);
+                v.name = CCLabelBMFont::create(sm->peerName(peer).c_str(), "bigFont.fnt");
+                v.name->setColor(c);
+                m_trailLayer->addChild(v.name, 2);
+            }
+            if (v.session != t.last.session || t.points1.size() < v.drawn1 || t.points2.size() < v.drawn2) {
+                v.draw->clear();  // new test (or trimmed trail): redraw from scratch
+                v.session = t.last.session;
+                v.drawn1 = v.drawn2 = 0;
+            }
+            auto drawNew = [&](const std::vector<std::pair<float, float>>& pts, std::size_t& drawn) {
+                for (std::size_t i = std::max<std::size_t>(drawn, 1); i < pts.size(); ++i) {
+                    CCPoint a{pts[i - 1].first, pts[i - 1].second}, b{pts[i].first, pts[i].second};
+                    v.draw->drawSegment(a, b, 3.f, ccColor4F{c.r / 255.f, c.g / 255.f, c.b / 255.f, .22f});  // glow
+                    v.draw->drawSegment(a, b, 1.2f, ccColor4F{c.r / 255.f, c.g / 255.f, c.b / 255.f, .95f});
+                }
+                drawn = std::max(drawn, pts.size());
+            };
+            drawNew(t.points1, v.drawn1);
+            drawNew(t.points2, v.drawn2);
+
+            // Icons only while they are actually playing (and updates keep coming).
+            const bool live = t.last.playing() && now - t.updated < std::chrono::milliseconds(1500);
+            auto placeIcon = [&](SimplePlayer*& icon, int& mode, bool show, int newMode, float x, float y, float rot, float scale, bool upside) {
+                if (!show) {
+                    if (icon) icon->setVisible(false);
+                    return;
+                }
+                if (!icon) {
+                    icon = SimplePlayer::create(1);
+                    if (!icon) return;
+                    icon->setColor(c);
+                    m_trailLayer->addChild(icon, 1);
+                }
+                if (mode != newMode) {
+                    icon->updatePlayerFrame(1, static_cast<IconType>(newMode));
+                    icon->setColor(c);
+                    mode = newMode;
+                }
+                icon->setVisible(true);
+                icon->setPosition({x, y});
+                icon->setRotation(rot);
+                const float sc = scale > 0.05f ? scale : 1.f;
+                icon->setScaleX(sc);
+                icon->setScaleY(upside ? -sc : sc);
+            };
+            using PS = session::PlayerState;
+            placeIcon(v.icon1, v.mode1, live, t.last.mode1, t.last.x1, t.last.y1, t.last.rot1, t.last.scale1, t.last.flags & PS::UpsideDown1);
+            placeIcon(v.icon2, v.mode2, live && (t.last.flags & PS::Dual), t.last.mode2, t.last.x2, t.last.y2, t.last.rot2, t.last.scale2,
+                      t.last.flags & PS::UpsideDown2);
+            v.name->setVisible(live);
+            v.name->setScale(.4f / myZoom);
+            v.name->setPosition({t.last.x1, t.last.y1 + 24.f});
+        }
+        // Players who left.
+        for (auto it = m_trails.begin(); it != m_trails.end();) {
+            if (!trails.contains(it->first)) {
+                for (CCNode* n : {static_cast<CCNode*>(it->second.draw), static_cast<CCNode*>(it->second.icon1),
+                                  static_cast<CCNode*>(it->second.icon2), static_cast<CCNode*>(it->second.name)}) {
+                    if (n) n->removeFromParent();
+                }
+                it = m_trails.erase(it);
+            } else {
+                ++it;
+            }
+        }
     }
 
     void redraw(float myZoom) {
@@ -72,7 +167,7 @@ public:
                 label = CCLabelBMFont::create(sm->peerName(p.peer).c_str(), "bigFont.fnt");
                 label->setAnchorPoint({0.f, 0.f});
                 label->setColor(c);
-                this->addChild(label);
+                m_frameLayer->addChild(label);
             }
             label->setScale(.45f / myZoom);
             label->setPosition({s.x - hw + 4.f / myZoom, s.y + hh + 2.f / myZoom});
@@ -90,6 +185,9 @@ public:
     }
 
 private:
+    CCNode* m_trailLayer = nullptr;
+    CCNode* m_frameLayer = nullptr;
+    std::map<sync::PeerId, TrailView> m_trails;
     CCDrawNode* m_draw = nullptr;
     std::map<sync::PeerId, CCLabelBMFont*> m_labels;
     std::map<sync::PeerId, Shown> m_shown;
@@ -107,6 +205,7 @@ void updatePresence(LevelEditorLayer* layer, bool paused) {
         return;
     }
     const bool showFrames = Mod::get()->getSettingValue<bool>("show-frames");
+    const bool showTrails = Mod::get()->getSettingValue<bool>("show-trails");
     const float zoom = objectLayer->getScale();
     if (!paused) {
         const auto win = CCDirector::sharedDirector()->getWinSize();
@@ -119,8 +218,14 @@ void updatePresence(LevelEditorLayer* layer, bool paused) {
         overlay->setTag(kOverlayTag);
         objectLayer->addChild(overlay, 10000);
     }
-    overlay->setVisible(!paused && showFrames);
-    if (!paused && showFrames) overlay->redraw(zoom > 0.01f ? zoom : 1.f);
+    // While this player is playtesting the overlay is hidden; everyone else's view keeps updating.
+    overlay->setVisible(!paused);
+    if (paused) return;
+    const float z = zoom > 0.01f ? zoom : 1.f;
+    overlay->showFrames(showFrames);
+    overlay->showTrails(showTrails);
+    if (showFrames) overlay->redraw(z);
+    overlay->redrawPlaytests(z);  // keeps trails complete even while hidden
 }
 
 } // namespace nexlevel::mod

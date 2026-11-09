@@ -15,6 +15,7 @@ No IP addresses, no router settings.
 - **Every object:** placing, moving, rotating, scaling, colouring and deleting.
 - **Level settings:** colour channels, background, ground, fonts, start options, guidelines and the song.
 - **Everyone's view:** a coloured frame with each player's name shows where they are working.
+- **Playtests:** when someone playtests, the others watch their icon play right in the editor. Each test leaves a trail in that player's colour.
 
 ## The NexLevel menu
 One modern panel with four tabs: **Room** (code, players, objects, uptime), **Players** (ping bars, profiles, kick), **Network** (internet quality gauge, live ping chart, connection details) and **Settings**.

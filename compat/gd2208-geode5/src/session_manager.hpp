@@ -10,6 +10,7 @@
 #include <nexlevel/core/net/upnp.hpp>
 
 #include <chrono>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -56,6 +57,10 @@ public:
     void setLocalPresence(float x, float y, float zoom);
     std::vector<session::Presence> presences() const;
     std::string peerName(sync::PeerId peer) const;
+
+    // Playtest spectating.
+    void setLocalPlayerState(const session::PlayerState& state);
+    const std::map<sync::PeerId, session::PlayTrail>& playTrails() const;
 
     // Ping and connection details (Collab menu, Info screen, editor ping label).
     std::optional<int> pingOf(sync::PeerId peer) const;  // ms to the host; nullopt = not measured yet

@@ -146,6 +146,33 @@ std::optional<Hello> decodeHello(std::span<const std::uint8_t> p) {
     std::copy(pk.begin(), pk.end(), m.publicKey.begin());
     return m;
 }
+bool validPlayerState(const PlayerState& s) noexcept {
+    auto ok = [](float v, float lim) { return v == v && v > -lim && v < lim; };
+    return ok(s.x1, 1e7f) && ok(s.y1, 1e7f) && ok(s.rot1, 1e6f) && ok(s.scale1, 100.f) && ok(s.x2, 1e7f) && ok(s.y2, 1e7f) &&
+           ok(s.rot2, 1e6f) && ok(s.scale2, 100.f) && s.mode1 < 32 && s.mode2 < 32;
+}
+std::vector<std::uint8_t> encode(const PlayerState& m) {
+    ByteWriter w;
+    w.u16(m.peer);
+    w.u16(m.session);
+    w.u8(m.flags);
+    w.u8(m.mode1);
+    w.u8(m.mode2);
+    for (float v : {m.x1, m.y1, m.rot1, m.scale1, m.x2, m.y2, m.rot2, m.scale2}) w.f32(v);
+    return w.take();
+}
+std::optional<PlayerState> decodePlayerState(std::span<const std::uint8_t> p) {
+    ByteReader r(p);
+    PlayerState m;
+    m.peer = r.u16();
+    m.session = r.u16();
+    m.flags = r.u8();
+    m.mode1 = r.u8();
+    m.mode2 = r.u8();
+    for (float* v : {&m.x1, &m.y1, &m.rot1, &m.scale1, &m.x2, &m.y2, &m.rot2, &m.scale2}) *v = r.f32();
+    if (!r.atEnd() || !validPlayerState(m)) return std::nullopt;
+    return m;
+}
 std::vector<std::uint8_t> encode(const Ping& m) {
     ByteWriter w;
     w.u32(m.seq);

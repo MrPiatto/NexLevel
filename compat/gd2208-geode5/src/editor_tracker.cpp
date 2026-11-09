@@ -17,6 +17,7 @@
 #include "presence_overlay.hpp"
 #include "session_manager.hpp"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -50,6 +51,60 @@ public:
     explicit EditorTracker(LevelEditorLayer* layer) : m_layer(layer) {}
 
     void setPaused(bool paused) { m_paused = paused; }
+
+    // ---------- playtest spectating ----------
+    void beginPlaytest() {
+        ++m_playSession;
+        m_playtesting = true;
+    }
+    void endPlaytest() {
+        if (!m_playtesting) return;
+        m_playtesting = false;
+        auto st = playerState();
+        st.flags = 0;  // stopped: the others keep the trail and hide the icon
+        SessionManager::get()->setLocalPlayerState(st);
+    }
+
+    void playtestTick() {
+        if (m_playtesting && SessionManager::get()->inSession()) SessionManager::get()->setLocalPlayerState(playerState());
+    }
+
+    static std::uint8_t modeOf(PlayerObject* p) {
+        if (p->m_isShip) return 1;
+        if (p->m_isBall) return 2;
+        if (p->m_isBird) return 3;
+        if (p->m_isDart) return 4;
+        if (p->m_isRobot) return 5;
+        if (p->m_isSpider) return 6;
+        if (p->m_isSwing) return 7;
+        return 0;
+    }
+
+    nexlevel::session::PlayerState playerState() {
+        nexlevel::session::PlayerState st;
+        st.session = m_playSession;
+        auto* p1 = m_layer->m_player1;
+        if (!p1) return st;
+        st.flags = nexlevel::session::PlayerState::Playing;
+        if (p1->m_isDead) st.flags |= nexlevel::session::PlayerState::Dead;
+        if (p1->m_isUpsideDown) st.flags |= nexlevel::session::PlayerState::UpsideDown1;
+        st.mode1 = modeOf(p1);
+        st.x1 = p1->getPositionX();
+        st.y1 = p1->getPositionY();
+        st.rot1 = p1->getRotation();
+        st.scale1 = p1->m_vehicleSize;
+        auto* p2 = m_layer->m_player2;
+        if (p2 && m_layer->m_gameState.m_isDualMode) {
+            st.flags |= nexlevel::session::PlayerState::Dual;
+            if (p2->m_isUpsideDown) st.flags |= nexlevel::session::PlayerState::UpsideDown2;
+            st.mode2 = modeOf(p2);
+            st.x2 = p2->getPositionX();
+            st.y2 = p2->getPositionY();
+            st.rot2 = p2->getRotation();
+            st.scale2 = p2->m_vehicleSize;
+        }
+        return st;
+    }
     LevelEditorLayer* layer() const { return m_layer; }
     GJGameLevel* level() const override { return m_layer->m_level; }
 
@@ -92,7 +147,10 @@ public:
         // removeObject and the end-of-frame section check can both report the same removal.
         if (!m_removedThisFrame.insert(o).second) return;
         if (m_removedLogged++ < kMaxLogLinesPerKind) {
-            log::info("NexLevel diff: removed uid={} id={}", o->m_uniqueID, o->m_objectID);
+            // The object may already be freed: log from the cache, never dereference it.
+            auto c = m_cache.find(o);
+            const std::string kind = c != m_cache.end() && c->second.contains(1) ? c->second.at(1) : "?";
+            log::info("NexLevel diff: removed object id={}", kind);
         }
         if (auto it = m_objToId.find(o); it != m_objToId.end()) {
             if (SessionManager::get()->inSession()) SessionManager::get()->submitLocal(nls::Op::erase(it->second));
@@ -171,6 +229,7 @@ public:
             SessionManager::get()->attachEditor(this);
             return;
         }
+        playtestTick();  // rate limited to ~30/s inside
         if (!ignoring()) {
             reconcileRemovals();
             if (selected) {
@@ -200,6 +259,7 @@ public:
             }
             flushSummary("changed", changedTotal);
             checkLevelSettings();
+            if (SessionManager::get()->inSession()) sweep();
         }
         flushSummary("created", m_createdLogged);
         flushSummary("removed", m_removedLogged);
@@ -218,6 +278,45 @@ public:
     }
 
     void detach() { SessionManager::get()->detachEditor(this); }
+
+    // Safety net for edits made by paths no hook sees (some tools, triggers' settings screens,
+    // other mods): a few objects per frame are re-read and compared, and after each full pass
+    // anything that left the level unnoticed is reported. ~100 objects per frame: a 50k-object
+    // level is fully checked every few seconds.
+    void sweep() {
+        auto* arr = m_layer->m_objects;
+        if (!arr) return;
+        const unsigned n = arr->count();
+        const unsigned end = std::min(n, m_sweepIndex + kSweepPerFrame);
+        for (unsigned i = m_sweepIndex; i < end; ++i) {
+            auto* o = static_cast<GameObject*>(arr->objectAtIndex(i));
+            if (!o || o->m_isSelected || isUnderEditorUI(o)) continue;  // selected ones are diffed every frame already
+            auto it = m_cache.find(o);
+            if (it == m_cache.end()) {
+                onCreated(o, "sweep");
+                continue;
+            }
+            auto now = read(o);
+            auto d = nls::diffProps(it->second, now);
+            if (d.empty()) continue;
+            log::info("NexLevel diff: sweep found a change uid={} id={}: {}", o->m_uniqueID, o->m_objectID, nls::describe(d));
+            publishChange(o, now, d);
+            it->second = std::move(now);
+        }
+        m_sweepIndex = end;
+        if (m_sweepIndex < n) return;
+        m_sweepIndex = 0;
+        // Full pass done: objects we know about that are no longer in the level.
+        std::unordered_set<GameObject*> live;
+        live.reserve(n);
+        for (unsigned i = 0; i < n; ++i) live.insert(static_cast<GameObject*>(arr->objectAtIndex(i)));
+        std::vector<GameObject*> gone;
+        for (auto& [o, _] : m_cache) {
+            if (!live.contains(o)) gone.push_back(o);
+        }
+        for (auto* o : gone) onRemoved(o);
+        m_removedThisFrame.clear();
+    }
 
     // ---------- IEditorBridge: session -> editor ----------
 
@@ -255,9 +354,7 @@ public:
         m_dirty.clear();
         m_pendingRemoval.clear();
         m_deferred.clear();
-        for (const auto& [id, state] : view->objects()) {
-            if (!nls::isLevelSettings(id)) spawn(id, state.props);
-        }
+        spawnMany(*view);
         applySettingsFromView(*view);
         log::info("NexLevel: editor rebuilt from room ({} objects)", view->objects().size());
     }
@@ -331,6 +428,36 @@ private:
         auto* o = static_cast<GameObject*>(objs->objectAtIndex(0));
         map(o, id);
         m_cache[o] = read(o);
+    }
+
+    // Whole level at once (join / rebuild): one createObjectsFromString call per batch is far
+    // faster than one per object. Batches map back to ids by order; if GD skipped any object in a
+    // batch, that batch is redone one object at a time so every id still gets its object.
+    void spawnMany(const nls::Replica& view) {
+        std::vector<std::pair<nls::NetId, const nls::PropMap*>> todo;
+        for (const auto& [id, state] : view.objects()) {
+            if (!nls::isLevelSettings(id)) todo.emplace_back(id, &state.props);
+        }
+        constexpr std::size_t kBatch = 2000;
+        for (std::size_t start = 0; start < todo.size(); start += kBatch) {
+            const std::size_t end = std::min(todo.size(), start + kBatch);
+            std::string str;
+            for (std::size_t i = start; i < end; ++i) str += nls::toSaveString(*todo[i].second) + ";";
+            auto* objs = m_layer->createObjectsFromString(str, true, true);
+            if (objs && objs->count() == end - start) {
+                for (std::size_t i = start; i < end; ++i) {
+                    auto* o = static_cast<GameObject*>(objs->objectAtIndex(static_cast<unsigned>(i - start)));
+                    map(o, todo[i].first);
+                    m_cache[o] = read(o);
+                }
+                continue;
+            }
+            log::warn("NexLevel: batch spawn created {} of {} objects, retrying one by one", objs ? objs->count() : 0, end - start);
+            if (objs) {
+                for (auto* o : CCArrayExt<GameObject*>(objs)) m_layer->removeObject(o, true);
+            }
+            for (std::size_t i = start; i < end; ++i) spawn(todo[i].first, *todo[i].second);
+        }
     }
 
     void publishCreate(GameObject* o, const nls::PropMap& props) {
@@ -414,6 +541,10 @@ private:
     int m_settingsTick = 0;
     bool m_settingsKnown = false;
     bool m_settingsDeferred = false;
+    bool m_playtesting = false;
+    unsigned m_sweepIndex = 0;
+    static constexpr unsigned kSweepPerFrame = 100;
+    std::uint16_t m_playSession = 0;
 };
 
 // Owned by the active EditorUI's fields; null outside the editor.
@@ -515,12 +646,22 @@ class $modify(NLLevelEditorLayer, LevelEditorLayer) {
         }
     }
 
+    // Runs every frame while playtesting (physics), even if the editor UI is paused.
+    void postUpdate(float dt) {
+        LevelEditorLayer::postUpdate(dt);
+        if (g_tracker && static_cast<LevelEditorLayer*>(g_tracker->layer()) == this) g_tracker->playtestTick();
+    }
+
     void onPlaytest() {
-        if (g_tracker) g_tracker->setPaused(true);
+        if (g_tracker) {
+            g_tracker->setPaused(true);
+            g_tracker->beginPlaytest();
+        }
         LevelEditorLayer::onPlaytest();
     }
 
     void onStopPlaytest() {
+        if (g_tracker) g_tracker->endPlaytest();  // before GD resets the player
         LevelEditorLayer::onStopPlaytest();
         if (g_tracker) {
             g_tracker->setPaused(false);
