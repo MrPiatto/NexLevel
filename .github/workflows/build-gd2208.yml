@@ -1,9 +1,12 @@
 # NexLevel build for GD 2.2081 (Geode v5). v1 targets Windows only (mod.json "gd": {"win": ...}).
+# Pushing a tag like v1.0.0 also publishes a GitHub Release with the .geode attached.
 name: Build GD 2.2081 (Geode v5)
 on:
   push:
   pull_request:
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   build:
     name: Windows
@@ -17,8 +20,26 @@ jobs:
           path: compat/gd2208-geode5
           sdk: v5.10.1
           combine: false
+      - name: Collect .geode
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          $pkg = Get-ChildItem -Path . -Recurse -Filter 'forg3studios.nexlevel.geode' -ErrorAction SilentlyContinue |
+                 Where-Object { $_.FullName -notlike '*\release\*' } |
+                 Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $pkg) { throw 'No .geode produced' }
+          Copy-Item $pkg.FullName release/
+          Write-Host "Packaged $($pkg.FullName)"
       - name: Upload .geode
         uses: actions/upload-artifact@v4
         with:
           name: nexlevel-gd2208
-          path: ${{ steps.build.outputs.build-output }}
+          path: release/forg3studios.nexlevel.geode
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/forg3studios.nexlevel.geode
+          name: NexLevel ${{ github.ref_name }}
+          body_path: compat/gd2208-geode5/changelog.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
