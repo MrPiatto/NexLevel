@@ -181,9 +181,10 @@ void SessionManager::openMenuJoinEditor() {
         level->m_songIDs = song.songIDs;
         level->m_sfxIDs = song.sfxIDs;
     }
+    level->m_levelDesc = "NexLevel room (temporary)";  // removed when the player leaves, or at next start
     level->retain();
-    if (m_backupLevel) m_backupLevel->release();
-    m_backupLevel = level;  // the player's copy of the room (autosave goes here)
+    if (m_tempLevel) m_tempLevel->release();
+    m_tempLevel = level;
     m_adoptNext = true;
     CCDirector::sharedDirector()->replaceScene(CCTransitionFade::create(0.3f, LevelEditorLayer::scene(level, false)));
 }
@@ -209,7 +210,7 @@ void SessionManager::leave() {
         m_client.reset();
         m_menuJoinPending = false;
         m_adoptNext = false;
-        if (m_backupLevel) { m_backupLevel->release(); m_backupLevel = nullptr; }
+        afterClientSession();
         notify("Left the room", NotificationIcon::Info);
     }
 }
@@ -463,6 +464,7 @@ void SessionManager::attachEditor(IEditorBridge* bridge) {
 void SessionManager::detachEditor(IEditorBridge* bridge) {
     if (m_editor != bridge) return;
     m_editor = nullptr;
+    editorClosed();
     if (m_host) {
         // In memory now (the editor may be torn down because GD is closing); to disk on the next frame.
         saveNow(false, "host left the editor");
@@ -500,7 +502,7 @@ void SessionManager::endClient(const std::string& message, NotificationIcon icon
     m_client.reset();
     m_menuJoinPending = false;
     m_adoptNext = false;
-    if (m_backupLevel) { m_backupLevel->release(); m_backupLevel = nullptr; }
+    afterClientSession();
 }
 
 void SessionManager::tick(float dt) {

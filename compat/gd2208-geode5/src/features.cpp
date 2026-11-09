@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <vector>
 
 using namespace geode::prelude;
 
@@ -47,7 +48,41 @@ bool SessionManager::isViewOnly(sync::PeerId peer) const {
     return false;
 }
 
+void SessionManager::editorClosed() {
+    if (m_noSaveLevel) {
+        m_noSaveLevel->release();
+        m_noSaveLevel = nullptr;
+    }
+}
+
+// A player's room ended: forget what they could take with them.
+void SessionManager::afterClientSession() {
+    GameManager::get()->m_editorClipboard = "";  // no pasting the room into another level later
+    // m_noSaveLevel stays locked until that editor closes; m_tempLevel is deleted by cleanupTempLevel.
+}
+
+// The level made to open a room from the main menu is deleted once nothing shows it any more.
+void SessionManager::cleanupTempLevel() {
+    if (!m_tempLevel || m_client) return;
+    auto* scene = CCDirector::sharedDirector()->getRunningScene();
+    if (!scene || typeinfo_cast<CCTransitionScene*>(scene) || LevelEditorLayer::get() || PlayLayer::get() ||
+        scene->getChildByType<EditLevelLayer>(0)) {
+        return;
+    }
+    GameLevelManager::sharedState()->deleteLevel(m_tempLevel);
+    m_tempLevel->release();
+    m_tempLevel = nullptr;
+    LocalLevelManager::sharedState()->save();
+    log::info("NexLevel: removed the temporary room level");
+}
+
 void SessionManager::featuresTick() {
+    cleanupTempLevel();
+    // Lock saving for the level open in a player's editor (joined from the editor or the main menu).
+    if (m_client && m_editor && !m_noSaveLevel) {
+        m_noSaveLevel = m_editor->level();
+        if (m_noSaveLevel) m_noSaveLevel->retain();
+    }
     const bool active = inSession();
     setMarker(active);
     if (!active) {
@@ -95,6 +130,15 @@ class $modify(NLCrashPromptMenuLayer, MenuLayer) {
         static bool checked = false;
         if (checked) return true;
         checked = true;
+        // Temporary room levels left behind by a crash: remove them.
+        if (auto* levels = LocalLevelManager::sharedState()->m_localLevels) {
+            std::vector<GJGameLevel*> leftovers;
+            for (auto* l : CCArrayExt<GJGameLevel*>(levels)) {
+                if (l && std::string(l->m_levelDesc) == "NexLevel room (temporary)") leftovers.push_back(l);
+            }
+            for (auto* l : leftovers) GameLevelManager::sharedState()->deleteLevel(l);
+            if (!leftovers.empty()) LocalLevelManager::sharedState()->save();
+        }
         std::error_code ec;
         const auto marker = Mod::get()->getSaveDir() / "in-room.marker";
         if (!std::filesystem::exists(marker, ec)) return true;

@@ -109,6 +109,11 @@ public:
     std::size_t chatCount() const { return m_chatTotal; }
     void setChatOpen(bool open) { m_chatOpen = open; }
 
+    // Players can't save someone else's room: locked for the level open in a player's editor while in
+    // the room and until that editor closes (GD's Save does nothing, the original level stays as it was).
+    bool saveLocked(GJGameLevel* level) const { return level && level == m_noSaveLevel; }
+    void editorClosed();
+
     // Permissions (host: turn editing off for a player; everyone: see who is view-only).
     void setViewOnly(sync::PeerId peer, bool on);
     bool isViewOnly(sync::PeerId peer) const;
@@ -128,7 +133,6 @@ private:
     bool m_chatOpen = false;
     bool m_wasViewOnly = false;
     bool makeHostCopy(std::string* error);
-    GJGameLevel* backupLevel();
     void ensureScheduled();
     void tick(float dt);
     void releaseMapper();
@@ -147,7 +151,10 @@ private:
     bool m_relayProbing = false;
     std::uint64_t m_roomGeneration = 0;
     std::vector<session::PeerInfo> m_lastPeers;
-    GJGameLevel* m_backupLevel = nullptr;  // player: retained while in the room
+    GJGameLevel* m_tempLevel = nullptr;  // player: level made to open a room from the main menu (deleted after)
+    GJGameLevel* m_noSaveLevel = nullptr;  // player: level whose editor shows someone's room (saving locked)
+    void cleanupTempLevel();
+    void afterClientSession();
     bool m_roomDirty = false;              // room changed since the last autosave
     std::chrono::steady_clock::time_point m_lastSave{};
     float m_badgeTimer = 0.f;

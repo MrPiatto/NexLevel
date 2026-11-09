@@ -166,7 +166,7 @@ and opens the editor for players who joined from the main menu once the level ha
   like GD does (`ZipUtils::compressString`).
 - Also saves when the host leaves the editor, closes the room, and whenever GD saves the game
   (`AppDelegate::trySaveGame` hook).
-- Players keep the room in the level open in their editor (or the one created when joining from the menu).
+- Players never keep a copy: GD's Save is disabled in their editor while it shows the room, the level used to join from the main menu is deleted afterwards (also at the next start after a crash), and the editor clipboard is cleared when the room ends.
 - Quitting GD while hosting shows a warning first (`MenuLayer::onQuit` hook).
 
 ### `features.cpp`: collaboration extras

@@ -19,7 +19,7 @@ Nothing counts as supported until it passes here. Use `tools\bot.ps1` when there
 | 13 | Quit while hosting | Main menu Quit (or Esc) with a room open | "Stop hosting?" warning; Cancel keeps the room; Close GD saves and closes, no crash. Also close the window with X: no crash, level saved |
 | 18 | Hosting badge | Host, exit the editor, go to the menus / level list | "Hosting NexLevel room - N players" at the bottom of every screen; gone in the editor and after Close room |
 | 19 | Autosave (host) | Host exits the editor, bot builds for 2 min, then kill GD from Task Manager and reopen | the bot's objects are in the host's level (autosave every 90 s, log `autosaved`) |
-| 20 | Player copy | Join from the editor, build, then leave | the level that was open in the editor holds the room content; no extra levels in My Levels |
+| 20 | No copy for players | Join (from the editor and from the menu), build, try Save, then leave | Save says "Only the host saves this level"; the player's own level is unchanged; the temporary "NL - <host>" level disappears after leaving; pasting in another level pastes nothing |
 | 15 | Ping / Info | Collab menu with the bot in the room; press Info | ping shows in ms; graph moves; IP hidden until Show; profile button opens the GD profile |
 | 16 | Watch playtests | Player A playtests while B stays in the editor | B sees A's icon move (right mode: ship, ball...), a trail in A's colour that stays after A stops; a new test starts a new trail |
 | 17 | Everything syncs | Use undo/redo, copy/paste, duplicate, align, edit group, trigger settings, text objects, keyframes, select-all + move | the other player ends up with an identical level (also check after 10 s for sweep corrections in the log) |

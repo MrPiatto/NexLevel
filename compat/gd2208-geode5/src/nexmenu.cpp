@@ -646,6 +646,16 @@ class $modify(NLEditorPauseLayer, EditorPauseLayer) {
         return true;
     }
 
+    // Players in someone else's room can't save it: the room (and the level) stays the host's.
+    void saveLevel() {
+        auto* sm = nexlevel::mod::SessionManager::get();
+        if (m_editorLayer && sm->saveLocked(m_editorLayer->m_level)) {
+            nexlevel::mod::notify("Only the host saves this level", NotificationIcon::Info);
+            return;
+        }
+        EditorPauseLayer::saveLevel();
+    }
+
     void onNexLevelCollab(CCObject*) {
         if (auto* menu = nexlevel::mod::NexMenu::create()) menu->show();
     }

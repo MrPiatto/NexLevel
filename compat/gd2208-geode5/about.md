@@ -23,7 +23,7 @@ Tabs: **Room** (code, players, objects, uptime,), **Players** (ping, profiles, G
 - Up to 16 players. The host can kick players, make them view-only and close the room.
 - If the host leaves the editor, the room stays open and everyone keeps building.
 - Dropped connections reconnect on their own, without losing work.
-- Autosave into the level itself while the room changes; players keep the room in the level open in their editor.
+- Autosave into the host's level while the room changes. Only the host keeps the level: players can't save someone else's room.
 
 ## Privacy and online connections
 NexLevel does **not** collect, upload or sell any data, and has no analytics.
@@ -31,6 +31,6 @@ NexLevel does **not** collect, upload or sell any data, and has no analytics.
 - **Relay servers:** to work on any network (including mobile data), rooms go through a Forg3 Studios relay server (official list, or your own one set in the settings). The relay only forwards **encrypted** data: it cannot read levels, names or chat. Like any server, it sees your IP address to connect you; IPs are used only in memory for anti-abuse limits and are never logged or stored; the relay log has connection counts only.
 - **Direct connections:** without a relay, players connect to the host directly (UPnP or same Wi-Fi), so the host's and players' IPs are visible to each other's computers, as in any online game. Your IP is hidden in the menu until you tap Show.
 - **Encryption:** all room traffic is end-to-end encrypted (X25519 + XChaCha20-Poly1305).
-- **Local files only:** settings and autosaves are saved on your PC.
+- **Local files only:** settings and the host's autosaves are saved on the host's PC.
 
 Everyone in a room needs the same Geometry Dash and NexLevel version.

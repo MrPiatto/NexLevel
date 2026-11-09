@@ -3,8 +3,8 @@
 //    changed), when the host leaves the editor, when the room closes and when GD saves/quits. This also
 //    works while the host is in the menus and the others keep building (the level string is rebuilt
 //    from the shared room state).
-//  - Player: the room is saved into the level open in their editor (or the one created when joining
-//    from the main menu), so a player keeps a copy even if the host disappears.
+//  - Players: nothing is saved. The room belongs to the host (see features.cpp: saving is locked for
+//    players, and the level used to open a room from the main menu is deleted afterwards).
 #include "session_manager.hpp"
 
 #include <Geode/modify/AppDelegate.hpp>
@@ -43,25 +43,14 @@ std::size_t SessionManager::playerCount() const {
     return n;
 }
 
-// A player's copy of the room is the level open in their editor (joining replaced its content), or
-// the level created when they joined from the main menu. No extra levels are ever created.
-GJGameLevel* SessionManager::backupLevel() {
-    if (m_backupLevel) return m_backupLevel;
-    if (!m_client || !m_lastJoined || !m_editor) return nullptr;
-    m_backupLevel = m_editor->level();
-    if (m_backupLevel) m_backupLevel->retain();
-    return m_backupLevel;
-}
-
 void SessionManager::saveNow(bool toDisk, const char* reason) {
     if (g_saving) return;
     g_saving = true;
     struct Reset { ~Reset() { g_saving = false; } } reset;
 
     const sync::Replica* room = view();
-    GJGameLevel* target = nullptr;
-    if (m_host) target = m_roomLevel;
-    else if (m_client && m_lastJoined) target = backupLevel();
+    // Only the host keeps the level: players never get a saved copy of someone else's room.
+    GJGameLevel* target = m_host ? m_roomLevel : nullptr;
     if (!room || !target) return;
 
     std::string str;
