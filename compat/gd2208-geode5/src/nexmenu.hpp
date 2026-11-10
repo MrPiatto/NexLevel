@@ -23,7 +23,7 @@ public:
     static NexMenu* create(bool fromEditor = true);
 
 protected:
-    bool init();
+    bool init() override;
     void buildTab();
     void refresh(float);
     void updateLive();
