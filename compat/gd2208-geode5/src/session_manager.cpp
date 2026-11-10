@@ -1,5 +1,6 @@
 #include "session_manager.hpp"
 
+#include "discord_presence.hpp"
 #include "hosting_badge.hpp"
 #include "relay_directory.hpp"
 
@@ -514,6 +515,7 @@ void SessionManager::tick(float dt) {
     if (m_badgeTimer >= 0.5f) {
         m_badgeTimer = 0.f;
         updateHostingBadge();
+        updateDiscordPresence();
     }
     autosaveTick();
     featuresTick();

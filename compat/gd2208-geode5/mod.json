@@ -23,6 +23,12 @@
 			"default": "",
 			"filter": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:"
 		},
+		"discord-status": {
+			"type": "bool",
+			"name": "Discord status",
+			"description": "Shows in your Discord profile that you are building in NexLevel (hosting / in a room / player count). Needs the Discord app running.",
+			"default": true
+		},
 		"check-updates": {
 			"type": "bool",
 			"name": "Check for updates",

@@ -1,4 +1,5 @@
 # v1.0.6
+- **Discord status:** your Discord profile shows that you're building in NexLevel (hosting / in a room, players, time), with a "Get NexLevel" button. Setting "Discord status".
 - **Public rooms:** the host can list the room (Settings tab), and everyone sees the open rooms in the main-menu NexLevel menu and joins with one tap.
 - **Credits:** each player's object count in the Players tab, and "Copy credits" for your level description.
 - **Look here:** a button that shows everyone a ring where you are looking.

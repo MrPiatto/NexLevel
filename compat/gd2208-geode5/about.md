@@ -31,6 +31,7 @@ NexLevel does **not** collect, upload or sell any data, and has no analytics.
 - **Relay servers:** to work on any network (including mobile data), rooms go through a Forg3 Studios relay server (official list, or your own one set in the settings). The relay only forwards **encrypted** data: it cannot read levels, names or chat. Like any server, it sees your IP address to connect you; IPs are used only in memory for anti-abuse limits and are never logged or stored; the relay log has connection counts only.
 - **Direct connections:** without a relay, players connect to the host directly (UPnP or same Wi-Fi), so the host's and players' IPs are visible to each other's computers, as in any online game. Your IP is hidden in the menu until you tap Show.
 - **Encryption:** all room traffic is end-to-end encrypted (X25519 + XChaCha20-Poly1305).
+- **Discord status:** if the Discord app is running, NexLevel tells it what you're doing (hosting / in a room, player count) so it shows on your profile. Only your local Discord app is contacted. Turn it off in the settings.
 - **Public rooms:** only if the host turns it on, the room's level name, the host's GD name and the player count are listed on the relay so others can find it.
 - **Community numbers:** the main-menu NexLevel menu reads public counters (downloads on GitHub / the Geode index, players and rooms on the relays). They are totals only: no names or IPs.
 - **Update check:** at startup NexLevel asks GitHub for the latest official release (can be turned off in the settings). Nothing about you is sent.
