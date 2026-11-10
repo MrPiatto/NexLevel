@@ -32,7 +32,7 @@ namespace nexlevel::mod {
 namespace {
 
 // Discord application of NexLevel (developer portal -> Application ID). Not a secret.
-constexpr const char* kDiscordAppId = "NEXLEVEL_DISCORD_APP_ID";
+constexpr const char* kDiscordAppId = "1569812343515390052";
 
 std::mutex g_mutex;
 std::string g_wanted;  // activity JSON wanted (empty = clear)
@@ -137,7 +137,6 @@ std::string ascii(const std::string& s, std::size_t max) {
 
 void updateDiscordPresence() {
 #ifdef GEODE_IS_WINDOWS
-    if (std::string(kDiscordAppId) == "NEXLEVEL_DISCORD_APP_ID") return;  // app id not set yet
     if (!g_threadStarted) {
         g_threadStarted = true;
         std::thread(ipcThread).detach();
