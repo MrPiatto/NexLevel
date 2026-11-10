@@ -89,6 +89,9 @@ public:
 
     // Editor plumbing.
     void attachEditor(IEditorBridge* bridge);
+    // True only for the editor that is linked to the room (another level's editor opened while
+    // hosting is NOT: nothing from it may reach the room).
+    bool isAttached(const IEditorBridge* bridge) const { return bridge && bridge == m_editor && inSession(); }
     void detachEditor(IEditorBridge* bridge);
     bool isRoomLevel(GJGameLevel* level) const;  // host: the level the room was opened from
     // Called by LevelEditorLayer::init before GD reads the level: the host's room level gets the

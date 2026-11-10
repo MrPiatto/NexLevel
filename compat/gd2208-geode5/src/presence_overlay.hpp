@@ -6,7 +6,7 @@
 namespace nexlevel::mod {
 
 // Call once per editor frame: sends this player's position and redraws the others.
-void updatePresence(LevelEditorLayer* layer, bool paused);
+void updatePresence(LevelEditorLayer* layer, bool paused, bool linked);
 
 // Moves the editor camera to where another player is working. False if they are not in an editor.
 bool focusOnPlayer(std::uint16_t peer);

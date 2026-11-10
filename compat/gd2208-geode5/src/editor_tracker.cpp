@@ -107,7 +107,7 @@ public:
     }
 
     void playtestTick() {
-        if (m_playtesting && SessionManager::get()->inSession()) SessionManager::get()->setLocalPlayerState(playerState());
+        if (m_playtesting && linked()) SessionManager::get()->setLocalPlayerState(playerState());
     }
 
     static std::uint8_t modeOf(PlayerObject* p) {
@@ -162,6 +162,8 @@ public:
     // ---------- local edit detection (ignored while applying remote changes) ----------
 
     bool ignoring() const { return m_paused || m_applyingRemote; }
+    // This editor is the one linked to the room (not another level opened while hosting).
+    bool linked() const { return SessionManager::get()->isAttached(this); }
 
     void snapshotIfUnknown(GameObject* o) {
         if (!o || ignoring() || m_cache.contains(o)) return;
@@ -252,7 +254,7 @@ public:
             auto mine = nexlevel::mod::readLevelSettings(m_layer);
             auto* sm = SessionManager::get();
             auto d = nls::diffProps(m_settingsCache, mine);
-            if (!d.empty() && sm->inSession() && sm->view() && sm->view()->find(nls::kLevelSettingsId)) {
+            if (!d.empty() && linked() && sm->view() && sm->view()->find(nls::kLevelSettingsId)) {
                 sm->submitLocal(nls::Op::setProps(nls::kLevelSettingsId, d));
             }
             if (auto* view = sm->view()) {
@@ -272,7 +274,7 @@ public:
         auto d = nls::diffProps(m_settingsCache, now);
         m_settingsCache = std::move(now);
         auto* sm = SessionManager::get();
-        if (!sm->inSession() || d.empty()) return;
+        if (!linked() || d.empty()) return;
         log::info("NexLevel: level settings changed: {}", nls::describe(d));
         auto* view = sm->view();
         if (view && view->find(nls::kLevelSettingsId)) sm->submitLocal(nls::Op::setProps(nls::kLevelSettingsId, d));
@@ -349,7 +351,7 @@ public:
             }
             flushSummary("changed", changedTotal);
             checkLevelSettings();
-            if (SessionManager::get()->inSession()) sweep();
+            if (linked()) sweep();
         }
         flushSummary("created", m_createdLogged);
         flushSummary("removed", m_removedLogged);
@@ -362,12 +364,12 @@ public:
             GameObject* only = single;
             if (!only && selected && selected->count() == 1) only = static_cast<GameObject*>(selected->objectAtIndex(0));
             std::uint16_t creator = 0;
-            if (only && SessionManager::get()->inSession()) {
+            if (only && linked()) {
                 if (auto it = m_objToId.find(only); it != m_objToId.end()) creator = it->second.peer();
             }
             nexlevel::mod::setSelectionCreator(creator);
         }
-        nexlevel::mod::updatePresence(m_layer, m_paused);
+        nexlevel::mod::updatePresence(m_layer, m_paused, linked());
 
         // Remote changes held back while the local user had the object selected or was mid-gesture.
         if (!m_deferred.empty() && !m_paused && !m_busy) {
@@ -584,8 +586,22 @@ private:
             return;
         }
         auto* o = static_cast<GameObject*>(objs->objectAtIndex(0));
+        afterSpawn(o, props);
+        m_layer->updateObjectColors(objs);
         map(o, id);
         cachePut(o, read(o));
+    }
+
+    // GD puts objects created from a string on the editor layer this player is currently viewing
+    // (as for a paste). A remote object must keep the layers its author gave it (keys 20 and 61).
+    static void afterSpawn(GameObject* o, const nls::PropMap& props) {
+        auto layerOf = [&](int key) -> short {
+            auto it = props.find(key);
+            if (it == props.end()) return 0;
+            try { return static_cast<short>(std::stoi(it->second)); } catch (...) { return 0; }
+        };
+        o->m_editorLayer = layerOf(20);
+        o->m_editorLayer2 = layerOf(61);
     }
 
     // Whole level at once (join / rebuild): one createObjectsFromString call per batch is far
@@ -601,9 +617,11 @@ private:
             if (objs && objs->count() == end - start) {
                 for (std::size_t i = start; i < end; ++i) {
                     auto* o = static_cast<GameObject*>(objs->objectAtIndex(static_cast<unsigned>(i - start)));
+                    afterSpawn(o, *todo[i].second);
                     map(o, todo[i].first);
                     cachePut(o, read(o));
                 }
+                m_layer->updateObjectColors(objs);
                 continue;
             }
             log::warn("NexLevel: batch spawn created {} of {} objects, retrying one by one", objs ? objs->count() : 0, end - start);
@@ -620,7 +638,7 @@ private:
     // Local object ops: queued while the player is mid-gesture, sent in order when it ends.
     void send(nls::Op op) {
         auto* sm = SessionManager::get();
-        if (!sm->inSession()) return;
+        if (!linked()) return;
         if (m_busy) m_outbox.push_back(std::move(op));
         else sm->submitLocal(std::move(op));
     }
@@ -628,7 +646,7 @@ private:
         if (m_outbox.empty()) return;
         auto* sm = SessionManager::get();
         log::debug("NexLevel: sending {} change(s) made during the gesture", m_outbox.size());
-        if (sm->inSession()) {
+        if (linked()) {
             for (auto& op : m_outbox) sm->submitLocal(std::move(op));
         }
         m_outbox.clear();
@@ -636,7 +654,7 @@ private:
 
     void publishCreate(GameObject* o, const nls::PropMap& props) {
         auto* sm = SessionManager::get();
-        if (!sm->inSession() || m_objToId.contains(o)) return;
+        if (!linked() || m_objToId.contains(o)) return;
         auto id = sm->newId();
         if (!id) return;
         map(o, *id);
@@ -645,7 +663,7 @@ private:
 
     void publishChange(GameObject* o, const nls::PropMap& now, const nls::PropDiff& d) {
         auto* sm = SessionManager::get();
-        if (!sm->inSession()) return;
+        if (!linked()) return;
         auto it = m_objToId.find(o);
         if (it == m_objToId.end()) {
             publishCreate(o, now);  // touched for the first time since joining

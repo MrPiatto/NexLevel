@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cmath>
 #include <map>
+#include <vector>
 
 using namespace geode::prelude;
 
@@ -206,12 +207,24 @@ private:
 
 } // namespace
 
-void updatePresence(LevelEditorLayer* layer, bool paused) {
+void updatePresence(LevelEditorLayer* layer, bool paused, bool linked) {
     if (!layer || !layer->m_objectLayer) return;
     auto* sm = SessionManager::get();
     auto* objectLayer = layer->m_objectLayer;
-    auto* overlay = static_cast<PresenceOverlay*>(objectLayer->getChildByTag(kOverlayTag));
-    if (!sm->inSession()) {
+    // Exactly one overlay per editor: find it by type (and drop any duplicate, whose frames and
+    // names would otherwise stay frozen on screen).
+    PresenceOverlay* overlay = nullptr;
+    if (auto* children = objectLayer->getChildren()) {
+        std::vector<PresenceOverlay*> found;
+        for (auto* child : CCArrayExt<CCNode*>(children)) {
+            if (auto* o = typeinfo_cast<PresenceOverlay*>(child)) found.push_back(o);
+        }
+        for (std::size_t i = 0; i < found.size(); ++i) {
+            if (i == 0) overlay = found[i];
+            else found[i]->removeFromParent();
+        }
+    }
+    if (!sm->inSession() || !linked) {
         if (overlay) overlay->removeFromParent();
         return;
     }

@@ -1,3 +1,9 @@
+# v1.0.6
+- Fixed other players' view outlines and names piling up on screen (old frames that never went away).
+- Fixed objects placed by other players landing on a different editor layer: they now keep the layer their author put them on.
+- Colours of objects placed by other players are refreshed right away.
+- Fixed: opening another level's editor while hosting sent that level's objects into the room when you came back. Only the room's own level is ever linked to the room now.
+
 # v1.0.5
 - Main-menu NexLevel menu shows live community numbers: players online and rooms open on the official relays, and total downloads.
 - Update notice: at startup NexLevel checks the official releases; if a newer version is out it shows what's new and installs it with one button, then restarts the game (3... 2... 1...).
