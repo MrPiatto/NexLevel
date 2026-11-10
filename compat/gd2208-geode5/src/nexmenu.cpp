@@ -115,6 +115,7 @@ void NexMenu::buildTab() {
     m_dynamic.clear();
     m_codeInput = m_relayInput = m_chatInput = nullptr;
     m_communityText = nullptr;
+    m_publicCodes.clear();
     m_codeText = m_onlineText = m_statPlayers = m_statObjects = m_statUptime = nullptr;
     m_pingRows.clear();
     m_gauge = nullptr;
@@ -198,7 +199,8 @@ void NexMenu::buildRoom() {
                 const bool full = r.players >= r.maxPlayers;
                 auto* j = kit::button(full ? "Full" : "Join", {40.f, 17.f}, full ? kit::Style::Secondary : kit::Style::Primary, this,
                                       menu_selector(NexMenu::onJoinPublic), 7.f);
-                j->setTag(static_cast<int>(i));
+                j->setTag(static_cast<int>(m_publicCodes.size()));
+                m_publicCodes.push_back(sm->codeFor(r));
                 j->setEnabled(!full);
                 addButton(j, 190.f, ry);
             }
@@ -646,10 +648,9 @@ void NexMenu::onExit() {
 void NexMenu::onJoinPublic(CCObject* sender) {
     const auto i = static_cast<std::size_t>(static_cast<CCNode*>(sender)->getTag());
     auto* sm = SessionManager::get();
-    const auto& rooms = sm->publicRooms();
-    if (i >= rooms.size()) return;
+    if (i >= m_publicCodes.size()) return;
     std::string error;
-    const auto code = sm->codeFor(rooms[i]);
+    const std::string code = m_publicCodes[i];
     const bool ok = m_fromEditor ? sm->join(code, &error) : sm->joinFromMenu(code, &error);
     if (!ok) {
         notify(error, NotificationIcon::Error);

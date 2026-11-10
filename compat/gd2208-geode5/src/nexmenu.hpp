@@ -93,6 +93,7 @@ protected:
     geode::TextInput* m_relayInput = nullptr;
     geode::TextInput* m_chatInput = nullptr;
     cocos2d::CCLabelTTF* m_communityText = nullptr;  // main menu: downloads / online / rooms
+    std::vector<std::string> m_publicCodes;          // codes behind the public-room Join buttons
     cocos2d::CCLabelTTF* m_codeText = nullptr;
     cocos2d::CCLabelTTF* m_onlineText = nullptr;
     cocos2d::CCLabelTTF* m_statPlayers = nullptr;

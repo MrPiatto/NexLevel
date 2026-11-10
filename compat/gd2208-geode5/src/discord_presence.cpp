@@ -34,8 +34,16 @@ namespace {
 // Discord application of NexLevel (developer portal -> Application ID). Not a secret.
 constexpr const char* kDiscordAppId = "1569812343515390052";
 
-std::mutex g_mutex;
-std::string g_wanted;  // activity JSON wanted (empty = clear)
+// Shared with the IPC thread. Deliberately never destroyed: that thread can still be running while
+// the game shuts down and static objects are torn down.
+struct Shared {
+    std::mutex mutex;
+    std::string wanted;  // activity JSON wanted (empty = clear)
+};
+Shared& shared() {
+    static auto* s = new Shared();
+    return *s;
+}
 bool g_threadStarted = false;
 std::int64_t g_roomStartEpoch = 0;
 
@@ -91,8 +99,8 @@ void ipcThread() {
         std::this_thread::sleep_for(std::chrono::seconds(2));
         std::string wanted;
         {
-            std::lock_guard lk(g_mutex);
-            wanted = g_wanted;
+            std::lock_guard lk(shared().mutex);
+            wanted = shared().wanted;
         }
         if (!pipe.isOpen()) {
             if (wanted.empty()) continue;
@@ -171,8 +179,8 @@ void updateDiscordPresence() {
         if (g_roomStartEpoch != 0) activity["timestamps"] = matjson::makeObject({{"start", g_roomStartEpoch}});
         wanted = activity.dump(matjson::NO_INDENTATION);
     }
-    std::lock_guard lk(g_mutex);
-    g_wanted = wanted;
+    std::lock_guard lk(shared().mutex);
+    shared().wanted = wanted;
 #endif
 }
 
