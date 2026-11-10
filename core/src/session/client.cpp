@@ -66,6 +66,7 @@ struct SessionClient::Impl {
     bool identityReset = false;
     std::map<sync::PeerId, Presence> presences;
     std::vector<ChatMessage> chatInbox;
+    std::vector<Marker> markerInbox;
     RttTracker rtt;
     std::map<sync::PeerId, std::uint16_t> pingTable;
     std::map<sync::PeerId, PlayTrail> trails;
@@ -438,6 +439,8 @@ std::vector<sync::NetId> SessionClient::pump() {
                     if (auto pr = decodePresence(e.frame.payload)) {
                         if (!m->replica || pr->peer != m->replica->self()) m->presences[pr->peer] = *pr;
                     }
+                } else if (type == MsgType::Marker) {
+                    if (auto mk = decodeMarker(e.frame.payload)) m->markerInbox.push_back(*mk);
                 } else if (type == MsgType::Chat) {
                     if (auto msg = decodeChat(e.frame.payload)) m->chatInbox.push_back(std::move(*msg));
                 } else if (type == MsgType::Kicked) {
@@ -510,6 +513,11 @@ void SessionClient::sendChat(const std::string& text) {
     m->chatInbox.push_back(std::move(msg));  // shown right away; the host relays it to the others
 }
 std::vector<ChatMessage> SessionClient::takeChat() { return std::exchange(m->chatInbox, {}); }
+void SessionClient::sendMarker(float x, float y) {
+    if (m->state != ClientState::Joined) return;
+    m->send(MsgType::Marker, encode(Marker{0, x, y}));
+}
+std::vector<Marker> SessionClient::takeMarkers() { return std::exchange(m->markerInbox, {}); }
 
 std::vector<Presence> SessionClient::presences() const {
     std::vector<Presence> out;

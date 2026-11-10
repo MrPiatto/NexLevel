@@ -74,6 +74,8 @@ public:
     // Room chat. takeChat(): lines received since the last call (this player's own included).
     void sendChat(const std::string& text);
     std::vector<ChatMessage> takeChat();
+    void sendMarker(float x, float y);
+    std::vector<Marker> takeMarkers();
 
     ClientState state() const noexcept;
     const std::string& lastError() const noexcept;

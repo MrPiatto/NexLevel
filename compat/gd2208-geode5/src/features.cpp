@@ -1,9 +1,15 @@
 // Collaboration extras: room chat, view-only players and the "GD closed during a room" report prompt.
 #include "session_manager.hpp"
+#include "relay_directory.hpp"
 
 #include <Geode/modify/MenuLayer.hpp>
 #include <Geode/utils/web.hpp>
 
+#include <nexlevel/core/relay/protocol.hpp>
+#include <nexlevel/core/sync/level_settings.hpp>
+#include <algorithm>
+#include <map>
+#include <thread>
 #include <filesystem>
 #include <fstream>
 #include <vector>
@@ -76,6 +82,112 @@ void SessionManager::cleanupTempLevel() {
     log::info("NexLevel: removed the temporary room level");
 }
 
+// ---------------------------------------------------------------- host room settings
+void SessionManager::applyHostSettings() {
+    if (!m_host) return;
+    m_host->setMaxPlayers(static_cast<std::size_t>(maxPlayers()));
+    m_host->setSettingsLocked(Mod::get()->getSavedValue<bool>("room-settings-locked", false));
+    m_public = Mod::get()->getSavedValue<bool>("room-public", false);
+    m_lastListing = {};
+}
+
+void SessionManager::setPublic(bool on) {
+    m_public = on;
+    Mod::get()->setSavedValue<bool>("room-public", on);
+    m_lastListing = {};  // send now
+    if (m_host && !on) m_host->setPublicListing(std::nullopt);
+}
+
+void SessionManager::setSettingsLocked(bool on) {
+    Mod::get()->setSavedValue<bool>("room-settings-locked", on);
+    if (m_host) m_host->setSettingsLocked(on);
+}
+bool SessionManager::settingsLocked() const { return Mod::get()->getSavedValue<bool>("room-settings-locked", false); }
+
+void SessionManager::setMaxPlayers(int n) {
+    n = std::clamp(n, 1, static_cast<int>(session::SessionHost::kMaxPeers));
+    Mod::get()->setSavedValue<int64_t>("room-max-players", n);
+    if (m_host) m_host->setMaxPlayers(static_cast<std::size_t>(n));
+    m_lastListing = {};
+}
+int SessionManager::maxPlayers() const {
+    return static_cast<int>(std::clamp<int64_t>(Mod::get()->getSavedValue<int64_t>("room-max-players", 16), 1, 16));
+}
+
+bool SessionManager::ban(sync::PeerId peer) { return m_host && m_host->ban(peer); }
+
+std::size_t SessionManager::undoPlayer(sync::PeerId peer) {
+    if (!m_host) return 0;
+    std::vector<sync::NetId> ids;
+    for (const auto& [id, _] : m_host->state().objects()) {
+        if (!sync::isLevelSettings(id) && id.peer() == peer) ids.push_back(id);
+    }
+    for (auto id : ids) m_host->submitLocal(sync::Op::erase(id));
+    if (m_editor && !ids.empty()) m_editor->applyRemote(ids);  // the host's own editor follows
+    m_roomDirty = true;
+    return ids.size();
+}
+
+// ---------------------------------------------------------------- credits
+std::vector<std::pair<std::string, std::size_t>> SessionManager::credits() const {
+    std::map<sync::PeerId, std::size_t> count;
+    if (const auto* room = view()) {
+        for (const auto& [id, _] : room->objects()) {
+            if (!sync::isLevelSettings(id)) ++count[id.peer()];
+        }
+    }
+    std::vector<std::pair<std::string, std::size_t>> out;
+    for (auto& [peer, n] : count) out.emplace_back(peerName(peer), n);
+    std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return a.second > b.second; });
+    return out;
+}
+
+std::string SessionManager::creditsText() const {
+    std::string s = "Made together with NexLevel:";
+    for (auto& [name, n] : credits()) s += "\n- " + name + " (" + std::to_string(n) + " objects)";
+    return s;
+}
+
+// ---------------------------------------------------------------- markers
+void SessionManager::sendMarker() {
+    if (m_host) m_host->sendMarker(m_localX, m_localY);
+    else if (m_client) m_client->sendMarker(m_localX, m_localY);
+    if (inSession()) {
+        m_markers.push_back({selfId().value_or(0), m_localX, m_localY, std::chrono::steady_clock::now()});
+        notify("Marked this spot for everyone", NotificationIcon::Success);
+    }
+}
+
+// ---------------------------------------------------------------- public rooms
+std::string SessionManager::codeFor(const PublicRoomEntry& room) const { return session::encodeRoomCode(room.address); }
+
+void SessionManager::refreshPublicRooms() {
+    if (m_publicLoading) return;
+    m_publicLoading = true;
+    std::thread([relays = relayDirectory()] {
+        std::vector<PublicRoomEntry> found;
+        for (const auto& r : relays) {
+            for (auto& pr : relay::listPublicRooms(r, std::chrono::milliseconds(2500))) {
+                PublicRoomEntry e;
+                e.relayId = r.id;
+                e.address.relayRoom = pr.roomId;
+                e.address.relayId = r.id;
+                e.address.key = pr.roomKey;
+                e.host = pr.host;
+                e.level = pr.level;
+                e.players = pr.players;
+                e.maxPlayers = pr.maxPlayers;
+                found.push_back(std::move(e));
+            }
+        }
+        geode::queueInMainThread([found = std::move(found)]() mutable {
+            auto* sm = SessionManager::get();
+            sm->m_publicRooms = std::move(found);
+            sm->m_publicLoading = false;
+        });
+    }).detach();
+}
+
 void SessionManager::featuresTick() {
     cleanupTempLevel();
     // Lock saving for the level open in a player's editor (joined from the editor or the main menu).
@@ -88,6 +200,31 @@ void SessionManager::featuresTick() {
     if (!active) {
         m_wasViewOnly = false;
         return;
+    }
+
+    for (auto& p : peers()) m_knownNames[p.id] = p.name;  // credits keep names of players who left
+
+    // Markers from the others: shown 8 seconds in the editor, and a notice.
+    std::vector<session::Marker> incoming;
+    if (m_host) incoming = m_host->takeMarkers();
+    else if (m_client) incoming = m_client->takeMarkers();
+    const auto nowT = std::chrono::steady_clock::now();
+    for (auto& mk : incoming) {
+        m_markers.push_back({mk.peer, mk.x, mk.y, nowT});
+        std::string plain;
+        for (char c : peerName(mk.peer)) plain += static_cast<unsigned char>(c) < 128 ? c : '?';
+        notify(plain + " marked a spot - look for the circle", NotificationIcon::Info);
+    }
+    std::erase_if(m_markers, [&](auto& m) { return nowT - m.at > std::chrono::seconds(8); });
+
+    // Public listing on the relay (host), refreshed every few seconds with the player count.
+    if (m_host && m_public && nowT - m_lastListing > std::chrono::seconds(5)) {
+        m_lastListing = nowT;
+        std::string level = m_roomLevel ? std::string(m_roomLevel->m_levelName) : std::string("Level");
+        const auto others = static_cast<std::uint8_t>(std::min<std::size_t>(playerCount(), 255));
+        m_host->setPublicListing(relay::encodeListing(true, static_cast<std::uint8_t>(others + 1),
+                                                      static_cast<std::uint8_t>(maxPlayers() + 1), m_host->roomKey(),
+                                                      displayName(), level));
     }
 
     // Chat.

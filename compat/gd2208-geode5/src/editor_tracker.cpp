@@ -369,6 +369,13 @@ public:
             }
             nexlevel::mod::setSelectionCreator(creator);
         }
+        // Following another player's view: the camera stays on them until you touch the editor.
+        if (auto follow = SessionManager::get()->following(); follow && linked() && !m_paused) {
+            if (g_editorTouches > 0 || !nexlevel::mod::focusOnPlayer(*follow)) {
+                SessionManager::get()->setFollow(std::nullopt);
+                nexlevel::mod::notify("Stopped following", NotificationIcon::Info);
+            }
+        }
         nexlevel::mod::updatePresence(m_layer, m_paused, linked());
 
         // Remote changes held back while the local user had the object selected or was mid-gesture.

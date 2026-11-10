@@ -1,8 +1,15 @@
 # v1.0.6
+- **Public rooms:** the host can list the room (Settings tab), and everyone sees the open rooms in the main-menu NexLevel menu and joins with one tap.
+- **Credits:** each player's object count in the Players tab, and "Copy credits" for your level description.
+- **Look here:** a button that shows everyone a ring where you are looking.
+- **Follow:** the camera follows another player until you touch the editor.
+- **Manage players (host):** view only, undo all their work, kick or ban (banned players can't come back).
+- **Room settings (host):** max players and "Lock level settings" (only the host can change colours, song, background...).
 - Fixed other players' view outlines and names piling up on screen (old frames that never went away).
 - Fixed objects placed by other players landing on a different editor layer: they now keep the layer their author put them on.
 - Colours of objects placed by other players are refreshed right away.
 - Fixed: opening another level's editor while hosting sent that level's objects into the room when you came back. Only the room's own level is ever linked to the room now.
+- Everyone in a room needs v1.0.6 (protocol v9). Update the relay server for public rooms.
 
 # v1.0.5
 - Main-menu NexLevel menu shows live community numbers: players online and rooms open on the official relays, and total downloads.

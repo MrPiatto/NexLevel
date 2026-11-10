@@ -92,6 +92,9 @@ public:
     // Room chat. takeChat(): lines received since the last call (the host's own included).
     void sendChat(const std::string& text);
     std::vector<ChatMessage> takeChat();
+    // "Look here" markers from the others (this player's own are not echoed).
+    void sendMarker(float x, float y);
+    std::vector<Marker> takeMarkers();
 
 private:
     struct Impl;

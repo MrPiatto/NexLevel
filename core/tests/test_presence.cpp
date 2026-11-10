@@ -128,6 +128,16 @@ void testChatAndViewOnly() {
     if (id2) a.submitLocal(sync::Op::create(*id2, sync::PropMap{{1, "1"}}));
     CHECK(waitFor(pumpAll, [&] { return host.state().find(*id2) != nullptr; }, 3000));
 
+    // Markers: A's "look here" reaches the host and B, with A's real id.
+    a.sendMarker(120.f, 45.f);
+    std::vector<Marker> hm, bm;
+    CHECK(waitFor(pumpAll, [&] {
+        for (auto& x : host.takeMarkers()) hm.push_back(x);
+        for (auto& x : b.takeMarkers()) bm.push_back(x);
+        return hm.size() == 1 && bm.size() == 1;
+    }, 3000));
+    CHECK(!bm.empty() && bm[0].peer == *a.peerId() && bm[0].x == 120.f);
+
     // Ban: B is removed and cannot come back; max players refuses extra players.
     const auto bId = *b.peerId();
     CHECK(host.ban(bId));

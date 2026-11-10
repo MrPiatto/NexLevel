@@ -9,7 +9,10 @@
 #include <Geode/modify/MenuLayer.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 
+#include <nexlevel/core/sync/level_settings.hpp>
+
 #include <algorithm>
+#include <map>
 #include <cctype>
 #include <cstdio>
 
@@ -76,7 +79,10 @@ bool NexMenu::init() {
     m_mainLayer->addChildAtPosition(panel, Anchor::Center);
     panel->setZOrder(-10);
 
-    if (!m_fromEditor) refreshCommunityStats();
+    if (!m_fromEditor) {
+        refreshCommunityStats();
+        SessionManager::get()->refreshPublicRooms();
+    }
     buildTab();
     this->schedule(schedule_selector(NexMenu::refresh), .5f);
     return true;
@@ -88,7 +94,8 @@ std::string NexMenu::structure() const {
                     (sm->roomCode() ? "c" : "-") + "|" + (m_showIp ? "i" : "-");
     for (auto& p : sm->peers()) s += "|" + std::to_string(p.id) + p.name + (p.viewOnly ? "v" : "");
     if (m_tab == Tab::Chat) s += "|chat" + std::to_string(sm->chatCount());
-    if (m_tab == Tab::Players) s += "|" + std::to_string(sm->presences().size());
+    if (m_tab == Tab::Players) s += "|" + std::to_string(sm->presences().size()) + "|f" + std::to_string(sm->following().value_or(0));
+    if (!m_fromEditor) s += "|pr" + std::to_string(sm->publicRooms().size()) + (sm->publicRoomsLoading() ? "l" : "");
     return s;
 }
 
@@ -172,13 +179,31 @@ void NexMenu::buildRoom() {
             addButton(kit::button("Host room", {150.f, 28.f}, kit::Style::Primary, this, menu_selector(NexMenu::onHost), 10.f),
                       16.f + 103.f, 92.f);
         } else {
-            // Hosting needs the level's editor: explain how instead of a button.
-            addText("Hosting starts from the level itself:", 7.5f, 30.f, 162.f, kit::kMuted);
-            addText("1. Open your level in the editor", 8.f, 30.f, 140.f, kit::kText);
-            addText("2. Press Esc > NexLevel Collab", 8.f, 30.f, 122.f, kit::kText);
-            addText("3. Host room (level or safe copy)", 8.f, 30.f, 104.f, kit::kText);
+            // Main menu: public rooms anyone can join with one tap.
+            addButton(kit::button("Refresh", {48.f, 15.f}, kit::Style::Ghost, this, menu_selector(NexMenu::onRefreshRooms), 6.5f),
+                      190.f, 180.f);
+            const auto& rooms = sm->publicRooms();
+            if (rooms.empty()) {
+                addText(sm->publicRoomsLoading() ? "Looking for rooms..." : "No public rooms right now", 8.f, 16.f + 103.f, 140.f,
+                        kit::kMuted, 0, {.5f, .5f});
+                addText("Host from your level's editor:", 7.f, 16.f + 103.f, 112.f, kit::kMuted, 0, {.5f, .5f});
+                addText("Esc > NexLevel Collab > Host room", 7.f, 16.f + 103.f, 100.f, kit::kText, 0, {.5f, .5f});
+            }
+            float ry = 158.f;
+            for (std::size_t i = 0; i < rooms.size() && i < 4; ++i, ry -= 24.f) {
+                const auto& r = rooms[i];
+                auto* t = addText(r.level, 7.5f, 28.f, ry + 4.f, kit::kText, 1);
+                if (t->getContentSize().width > 120.f) t->setScale(120.f / t->getContentSize().width);
+                addText(r.host + "  " + std::to_string(r.players) + "/" + std::to_string(r.maxPlayers), 6.3f, 28.f, ry - 6.f, kit::kMuted);
+                const bool full = r.players >= r.maxPlayers;
+                auto* j = kit::button(full ? "Full" : "Join", {40.f, 17.f}, full ? kit::Style::Secondary : kit::Style::Primary, this,
+                                      menu_selector(NexMenu::onJoinPublic), 7.f);
+                j->setTag(static_cast<int>(i));
+                j->setEnabled(!full);
+                addButton(j, 190.f, ry);
+            }
         }
-        addText("Up to 16 players - encrypted", 7.f, 16.f + 103.f, 60.f, kit::kMuted, 0, {.5f, .5f});
+        if (m_fromEditor) addText("Up to 16 players - encrypted", 7.f, 16.f + 103.f, 60.f, kit::kMuted, 0, {.5f, .5f});
 
         // Join card
         add(kit::card({206.f, 176.f}, 12.f, glass, edge, .8f), 238.f + 103.f, 22.f + 88.f);
@@ -227,9 +252,16 @@ void NexMenu::buildRoom() {
         addText(captions[i], 6.5f, cx, tileY - 13.f, kit::kMuted, 1, {.5f, .5f});
     }
 
-    addButton(kit::button(host ? "Close room" : "Leave room", {150.f, 26.f}, kit::Style::Danger, this,
-                          menu_selector(NexMenu::onLeave), 9.5f), W / 2.f, 40.f);
-    addText(host ? "Everything is saved into this level automatically" : "Your edits are shared live with everyone", 7.f, W / 2.f, 16.f,
+    if (m_fromEditor) {
+        addButton(kit::button("Look here", {120.f, 26.f}, kit::Style::Secondary, this, menu_selector(NexMenu::onLookHere), 9.f),
+                  W / 2.f - 70.f, 40.f);
+        addButton(kit::button(host ? "Close room" : "Leave room", {120.f, 26.f}, kit::Style::Danger, this,
+                              menu_selector(NexMenu::onLeave), 9.5f), W / 2.f + 70.f, 40.f);
+    } else {
+        addButton(kit::button(host ? "Close room" : "Leave room", {150.f, 26.f}, kit::Style::Danger, this,
+                              menu_selector(NexMenu::onLeave), 9.5f), W / 2.f, 40.f);
+    }
+    addText(m_fromEditor ? "Look here = a ring everyone sees where you are looking" : host ? "Everything is saved into this level automatically" : "Your edits are shared live with everyone", 7.f, W / 2.f, 16.f,
             kit::kMuted, 0, {.5f, .5f});
 }
 
@@ -243,10 +275,18 @@ void NexMenu::buildPlayers() {
         return;
     }
     addText("PLAYERS  " + std::to_string(peers.size()) + "/16", 7.5f, 24.f, kContentTop - 6.f, kit::kMuted, 1);
-    addText("PING", 7.f, 286.f, kContentTop - 6.f, kit::kMuted, 1, {.5f, .5f});
+    addText("PING", 7.f, 306.f, kContentTop - 6.f, kit::kMuted, 1, {.5f, .5f});
+    addButton(kit::button("Copy credits", {78.f, 15.f}, kit::Style::Ghost, this, menu_selector(NexMenu::onCopyCredits), 6.5f),
+              W - 60.f, kContentTop - 6.f);
     const auto self = sm->selfId();
     const bool host = sm->role() == Role::Host;
     const std::size_t maxRows = 6;
+    std::map<sync::PeerId, std::size_t> placed;  // objects in the level per player (credits)
+    if (const auto* room = sm->view()) {
+        for (const auto& [id, _] : room->objects()) {
+            if (!sync::isLevelSettings(id)) ++placed[id.peer()];
+        }
+    }
     for (std::size_t i = 0; i < peers.size() && i < maxRows; ++i) {
         const auto& p = peers[i];
         const float y = kContentTop - 26.f - static_cast<float>(i) * 29.f;
@@ -264,37 +304,38 @@ void NexMenu::buildPlayers() {
         if (p.id == session::SessionHost::kHostPeer) addChip("HOST", kit::kViolet);
         if (self && p.id == *self) addChip("YOU", kit::kTeal);
         if (p.viewOnly) addChip("VIEW ONLY", kit::kWarn);
+        if (auto it = placed.find(p.id); it != placed.end()) addChip(std::to_string(it->second) + " obj", kit::kMuted);
         const bool isSelf = self && p.id == *self;
         if (m_fromEditor && !isSelf) {
             bool here = false;
             for (auto& pr : sm->presences()) here = here || pr.peer == p.id;
             if (here) {
-                auto* go = kit::button("Go", {30.f, 17.f}, kit::Style::Secondary, this, menu_selector(NexMenu::onGoTo), 7.f);
+                auto* go = kit::button("Go", {28.f, 17.f}, kit::Style::Secondary, this, menu_selector(NexMenu::onGoTo), 7.f);
                 go->setTag(p.id);
-                addButton(go, 214.f, y);
+                addButton(go, 224.f, y);
+                const bool following = sm->following() == p.id;
+                auto* fl = kit::button(following ? "Stop" : "Follow", {38.f, 17.f}, following ? kit::Style::Primary : kit::Style::Secondary,
+                                       this, menu_selector(NexMenu::onFollow), 6.5f);
+                fl->setTag(p.id);
+                addButton(fl, 260.f, y);
             }
         }
 
         if (p.id != session::SessionHost::kHostPeer) {
-            auto* meter = add(kit::Meter::create({56.f, 5.f}), 262.f, y);
             auto* label = addText("...", 8.f, 306.f, y, kit::kMuted, 1, {.5f, .5f});
-            m_pingRows.push_back({p.id, label, meter});
+            m_pingRows.push_back({p.id, label, nullptr});
         } else {
-            addText("host", 7.5f, 286.f, y, kit::kMuted, 0, {.5f, .5f});
+            addText("host", 7.5f, 306.f, y, kit::kMuted, 0, {.5f, .5f});
         }
         if (p.accountId != 0) {
             auto* b = kit::button("Profile", {36.f, 17.f}, kit::Style::Secondary, this, menu_selector(NexMenu::onProfile), 6.5f);
             b->setTag(static_cast<int>(p.accountId));
-            addButton(b, 340.f, y);
+            addButton(b, 346.f, y);
         }
         if (host && p.id != session::SessionHost::kHostPeer) {
-            auto* v = kit::button(p.viewOnly ? "Allow" : "View", {40.f, 17.f}, p.viewOnly ? kit::Style::Primary : kit::Style::Secondary,
-                                  this, menu_selector(NexMenu::onToggleViewOnly), 6.5f);
-            v->setTag(p.id);
-            addButton(v, 382.f, y);
-            auto* b = kit::button("Kick", {36.f, 17.f}, kit::Style::Danger, this, menu_selector(NexMenu::onKick), 6.5f);
+            auto* b = kit::button("Manage", {52.f, 17.f}, kit::Style::Danger, this, menu_selector(NexMenu::onManage), 6.5f);
             b->setTag(p.id);
-            addButton(b, 424.f, y);
+            addButton(b, 412.f, y);
         }
     }
     if (peers.size() > maxRows) {
@@ -354,6 +395,30 @@ void NexMenu::buildSettings() {
         item->m_scaleMultiplier = 1.05f;
         item->setTag(i);
         addButton(item, W - 44.f, y);
+    }
+    if (SessionManager::get()->role() == Role::Host) {
+        // Room settings (host): public listing, level settings lock, max players.
+        auto* sm = SessionManager::get();
+        add(kit::card({428.f, 52.f}, 10.f, glass, edge, .6f), W / 2.f, y - 10.f);
+        addText("Public room", 8.5f, 32.f, y + 4.f, kit::kText, 1);
+        addText("Listed in everyone's main menu", 6.3f, 32.f, y - 7.f, kit::kMuted);
+        auto* pub = CCMenuItemSpriteExtra::create(kit::Toggle::create(sm->isPublic()), this, menu_selector(NexMenu::onTogglePublic));
+        addButton(pub, 168.f, y - 2.f);
+        addText("Lock level settings", 8.5f, 200.f, y + 4.f, kit::kText, 1);
+        addText("Only you change colours, song...", 6.3f, 200.f, y - 7.f, kit::kMuted);
+        auto* lock = CCMenuItemSpriteExtra::create(kit::Toggle::create(sm->settingsLocked()), this, menu_selector(NexMenu::onToggleLock));
+        addButton(lock, 330.f, y - 2.f);
+        addText("Max players", 7.f, 404.f, y + 8.f, kit::kMuted, 1, {.5f, .5f});
+        auto* minus = kit::button("-", {16.f, 16.f}, kit::Style::Secondary, this, menu_selector(NexMenu::onMaxPlayers), 9.f);
+        minus->setTag(-1);
+        addButton(minus, 382.f, y - 8.f);
+        addText(std::to_string(sm->maxPlayers()), 10.f, 404.f, y - 8.f, kit::kText, 1, {.5f, .5f});
+        auto* plus = kit::button("+", {16.f, 16.f}, kit::Style::Secondary, this, menu_selector(NexMenu::onMaxPlayers), 9.f);
+        plus->setTag(1);
+        addButton(plus, 426.f, y - 8.f);
+        addText("NexLevel " + Mod::get()->getVersion().toVString() + "  -  protocol v" + std::to_string(kProtocolVersion), 6.5f, W / 2.f, 12.f,
+                kit::kMuted, 0, {.5f, .5f});
+        return;
     }
     // Private relay
     add(kit::card({428.f, 52.f}, 10.f, glass, edge, .6f), W / 2.f, y - 10.f);
@@ -420,7 +485,7 @@ void NexMenu::updateLive() {
         kit::setTextIfChanged(row.label, ms ? std::to_string(*ms) + " ms" : "...");
         const auto c = ms ? ui::pingColor(*ms) : kit::kMuted;
         row.label->setColor(c);
-        row.meter->setValue(ms ? 1.f - std::min(*ms, 250) / 250.f : 0.f, c);
+        if (row.meter) row.meter->setValue(ms ? 1.f - std::min(*ms, 250) / 250.f : 0.f, c);
     }
 
     // Network tab.
@@ -576,6 +641,113 @@ void NexMenu::onToggleViewOnly(CCObject* sender) {
 void NexMenu::onExit() {
     SessionManager::get()->setChatOpen(false);
     Popup::onExit();
+}
+
+void NexMenu::onJoinPublic(CCObject* sender) {
+    const auto i = static_cast<std::size_t>(static_cast<CCNode*>(sender)->getTag());
+    auto* sm = SessionManager::get();
+    const auto& rooms = sm->publicRooms();
+    if (i >= rooms.size()) return;
+    std::string error;
+    const auto code = sm->codeFor(rooms[i]);
+    const bool ok = m_fromEditor ? sm->join(code, &error) : sm->joinFromMenu(code, &error);
+    if (!ok) {
+        notify(error, NotificationIcon::Error);
+        return;
+    }
+    if (m_fromEditor) buildTab();
+    else this->onClose(nullptr);
+}
+
+void NexMenu::onRefreshRooms(CCObject*) {
+    SessionManager::get()->refreshPublicRooms();
+    buildTab();
+}
+
+void NexMenu::onTogglePublic(CCObject* sender) {
+    auto* sm = SessionManager::get();
+    sm->setPublic(!sm->isPublic());
+    if (auto* t = typeinfo_cast<kit::Toggle*>(static_cast<CCMenuItemSpriteExtra*>(sender)->getNormalImage())) t->setOn(sm->isPublic());
+    notify(sm->isPublic() ? "Room listed - anyone can find it in the main menu" : "Room unlisted - only people with the code can join",
+           NotificationIcon::Info);
+}
+
+void NexMenu::onToggleLock(CCObject* sender) {
+    auto* sm = SessionManager::get();
+    sm->setSettingsLocked(!sm->settingsLocked());
+    if (auto* t = typeinfo_cast<kit::Toggle*>(static_cast<CCMenuItemSpriteExtra*>(sender)->getNormalImage())) t->setOn(sm->settingsLocked());
+}
+
+void NexMenu::onMaxPlayers(CCObject* sender) {
+    auto* sm = SessionManager::get();
+    sm->setMaxPlayers(sm->maxPlayers() + static_cast<CCNode*>(sender)->getTag());
+    buildTab();
+}
+
+void NexMenu::onFollow(CCObject* sender) {
+    const auto peer = static_cast<sync::PeerId>(static_cast<CCNode*>(sender)->getTag());
+    auto* sm = SessionManager::get();
+    if (sm->following() == peer) {
+        sm->setFollow(std::nullopt);
+        buildTab();
+        return;
+    }
+    sm->setFollow(peer);
+    notify("Following " + sm->peerName(peer) + " - touch the editor to stop", NotificationIcon::Info);
+    this->onClose(nullptr);
+}
+
+void NexMenu::onCopyCredits(CCObject*) {
+    utils::clipboard::write(SessionManager::get()->creditsText());
+    notify("Credits copied - paste them in your level description", NotificationIcon::Success);
+}
+
+void NexMenu::onLookHere(CCObject*) {
+    SessionManager::get()->sendMarker();
+    this->onClose(nullptr);
+}
+
+// Host: everything about one player, as a short chain of two-choice popups (Esc cancels).
+void NexMenu::onManage(CCObject* sender) {
+    const auto peer = static_cast<sync::PeerId>(static_cast<CCNode*>(sender)->getTag());
+    auto* sm = SessionManager::get();
+    const std::string name = sm->peerName(peer);
+    const bool viewOnly = sm->isViewOnly(peer);
+    Ref<NexMenu> self = this;
+    auto refresh = [self] { if (self->getParent()) self->buildTab(); };
+    geode::createQuickPopup(("Manage " + name).c_str(),
+        std::string(viewOnly ? "<cy>Allow editing</c>: let them build again." : "<cy>View only</c>: they can watch but not edit.") +
+            "\n<cr>Remove...</c>: undo their work, kick or ban.",
+        viewOnly ? "Allow editing" : "View only", "Remove...", 360.f,
+        [peer, name, viewOnly, refresh](FLAlertLayer*, bool remove) {
+            auto* sm = SessionManager::get();
+            if (!remove) {
+                sm->setViewOnly(peer, !viewOnly);
+                refresh();
+                return;
+            }
+            geode::createQuickPopup(("Remove " + name).c_str(),
+                "<co>Undo work</c>: delete every object they placed, for everyone.\n<cr>Kick / Ban</c>: remove them from the room.",
+                "Undo work", "Kick / Ban", 360.f,
+                [peer, name, refresh](FLAlertLayer*, bool kickBan) {
+                    if (!kickBan) {
+                        const auto n = SessionManager::get()->undoPlayer(peer);
+                        notify("Removed " + std::to_string(n) + " objects placed by " + name, NotificationIcon::Success);
+                        refresh();
+                        return;
+                    }
+                    geode::createQuickPopup(("Kick or ban " + name + "?").c_str(),
+                        "<cy>Kick</c>: they can join again.\n<cr>Ban</c>: never in this room again.", "Kick", "Ban",
+                        [peer, refresh](FLAlertLayer*, bool ban) {
+                            auto* sm = SessionManager::get();
+                            if (ban ? sm->ban(peer) : sm->kick(peer)) notify(ban ? "Player banned" : "Player removed", NotificationIcon::Info);
+                            refresh();
+                        },
+                        true, true);
+                },
+                true, true);
+        },
+        true, true);
 }
 
 void NexMenu::onKick(CCObject* sender) {

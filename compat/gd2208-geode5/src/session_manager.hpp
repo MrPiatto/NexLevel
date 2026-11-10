@@ -8,6 +8,7 @@
 #include <nexlevel/core/session/client.hpp>
 #include <nexlevel/core/session/host.hpp>
 #include <nexlevel/core/net/upnp.hpp>
+#include <nexlevel/core/session/room_code.hpp>
 
 #include <chrono>
 #include <deque>
@@ -117,6 +118,44 @@ public:
     bool saveLocked(GJGameLevel* level) const { return level && level == m_noSaveLevel; }
     void editorClosed();
 
+    // Host room settings (saved for next time): public listing, settings lock, max players, bans.
+    void setPublic(bool on);
+    bool isPublic() const { return m_public; }
+    void setSettingsLocked(bool on);
+    bool settingsLocked() const;
+    void setMaxPlayers(int n);
+    int maxPlayers() const;
+    bool ban(sync::PeerId peer);
+    // Host: remove every object this player placed (still in the level). Returns how many.
+    std::size_t undoPlayer(sync::PeerId peer);
+
+    // Credits: objects in the level per player (who placed them).
+    std::vector<std::pair<std::string, std::size_t>> credits() const;
+    std::string creditsText() const;
+
+    // "Look here" markers and following another player's view.
+    void sendMarker();
+    struct MarkerShown {
+        sync::PeerId peer = 0;
+        float x = 0, y = 0;
+        std::chrono::steady_clock::time_point at{};
+    };
+    const std::vector<MarkerShown>& markers() const { return m_markers; }
+    void setFollow(std::optional<sync::PeerId> peer) { m_follow = peer; }
+    std::optional<sync::PeerId> following() const { return m_follow; }
+
+    // Public rooms on the official relays (main menu).
+    struct PublicRoomEntry {
+        std::uint8_t relayId = 0;
+        session::RoomAddress address;
+        std::string host, level;
+        int players = 0, maxPlayers = 0;
+    };
+    void refreshPublicRooms();
+    const std::vector<PublicRoomEntry>& publicRooms() const { return m_publicRooms; }
+    bool publicRoomsLoading() const { return m_publicLoading; }
+    std::string codeFor(const PublicRoomEntry& room) const;
+
     // Permissions (host: turn editing off for a player; everyone: see who is view-only).
     void setViewOnly(sync::PeerId peer, bool on);
     bool isViewOnly(sync::PeerId peer) const;
@@ -132,6 +171,15 @@ private:
     void autosaveTick();
     void featuresTick();
     std::deque<ChatLine> m_chatLog;
+    bool m_public = false;
+    float m_localX = 0, m_localY = 0;
+    std::vector<MarkerShown> m_markers;
+    std::optional<sync::PeerId> m_follow;
+    std::vector<PublicRoomEntry> m_publicRooms;
+    bool m_publicLoading = false;
+    std::map<sync::PeerId, std::string> m_knownNames;
+    std::chrono::steady_clock::time_point m_lastListing{};
+    void applyHostSettings();
     std::size_t m_chatTotal = 0;
     bool m_chatOpen = false;
     bool m_wasViewOnly = false;

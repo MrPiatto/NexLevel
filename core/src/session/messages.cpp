@@ -358,6 +358,23 @@ std::vector<std::uint8_t> encode(const ChatMessage& m) {
     w.str(m.text.substr(0, kMaxChatLen));
     return w.take();
 }
+std::vector<std::uint8_t> encode(const Marker& m) {
+    ByteWriter w;
+    w.u16(m.peer);
+    w.f32(m.x);
+    w.f32(m.y);
+    return w.take();
+}
+std::optional<Marker> decodeMarker(std::span<const std::uint8_t> p) {
+    ByteReader r(p);
+    Marker m;
+    m.peer = r.u16();
+    m.x = r.f32();
+    m.y = r.f32();
+    auto ok = [](float v) { return v == v && v > -1e7f && v < 1e7f; };
+    if (!r.ok() || !r.atEnd() || !ok(m.x) || !ok(m.y)) return std::nullopt;
+    return m;
+}
 std::optional<ChatMessage> decodeChat(std::span<const std::uint8_t> p) {
     ByteReader r(p);
     ChatMessage m;

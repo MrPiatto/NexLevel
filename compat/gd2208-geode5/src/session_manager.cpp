@@ -86,6 +86,7 @@ bool SessionManager::hostRoom(std::string* error, bool onCopy) {
     if (m_roomLevel) m_roomLevel->retain();
     ensureScheduled();
     m_editor->seedSession();
+    applyHostSettings();
     log::info("NexLevel: room opened on port {}", kDefaultPort);
     return true;
 }
@@ -230,6 +231,8 @@ std::optional<sync::PeerId> SessionManager::selfId() const {
 }
 
 void SessionManager::setLocalPresence(float x, float y, float zoom) {
+    m_localX = x;
+    m_localY = y;
     if (m_host) m_host->setLocalPresence(x, y, zoom);
     else if (m_client) m_client->setLocalPresence(x, y, zoom);
 }
@@ -256,6 +259,7 @@ std::string SessionManager::peerName(sync::PeerId peer) const {
     for (auto& p : peers()) {
         if (p.id == peer) return p.name;
     }
+    if (auto it = m_knownNames.find(peer); it != m_knownNames.end()) return it->second;  // left the room
     return "Player";
 }
 
@@ -573,6 +577,8 @@ void SessionManager::tick(float dt) {
                                   " - same GD version required", NotificationIcon::Error);
                 } else if (reason == session::RefuseReason::WrongRoomCode) {
                     endClient("Wrong room code - ask the host for the current one", NotificationIcon::Error);
+                } else if (reason == session::RefuseReason::Banned) {
+                    endClient("You are banned from this room", NotificationIcon::Error);
                 } else if (reason == session::RefuseReason::SessionFull) {
                     endClient("The room is full", NotificationIcon::Error);
                 } else {

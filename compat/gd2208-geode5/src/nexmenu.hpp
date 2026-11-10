@@ -60,6 +60,15 @@ protected:
     void onCopy(cocos2d::CCObject*);
     void onLeave(cocos2d::CCObject*);
     void onKick(cocos2d::CCObject* sender);
+    void onManage(cocos2d::CCObject* sender);
+    void onFollow(cocos2d::CCObject* sender);
+    void onCopyCredits(cocos2d::CCObject*);
+    void onLookHere(cocos2d::CCObject*);
+    void onJoinPublic(cocos2d::CCObject* sender);
+    void onRefreshRooms(cocos2d::CCObject*);
+    void onTogglePublic(cocos2d::CCObject*);
+    void onToggleLock(cocos2d::CCObject*);
+    void onMaxPlayers(cocos2d::CCObject* sender);
     void onProfile(cocos2d::CCObject* sender);
     void onToggleIp(cocos2d::CCObject*);
     void onToggleSetting(cocos2d::CCObject* sender);

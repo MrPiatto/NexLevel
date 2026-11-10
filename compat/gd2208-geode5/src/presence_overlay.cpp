@@ -138,6 +138,22 @@ public:
             v.name->setScale(.4f / myZoom);
             v.name->setPosition({t.last.x1, t.last.y1 + 24.f});
         }
+        // "Look here" markers: a pulsing ring in the player's colour, with their name.
+        const auto nowM = std::chrono::steady_clock::now();
+        for (const auto& mk : sm->markers()) {
+            const float age = std::chrono::duration<float>(nowM - mk.at).count();
+            const float pulse = 1.f + 0.25f * std::sin(age * 6.f);
+            const float radius = 28.f * pulse / myZoom;
+            const auto c = colorFor(mk.peer);
+            CCPoint ring[40];
+            for (int i = 0; i < 40; ++i) {
+                const float a = static_cast<float>(i) / 40.f * 6.2831853f;
+                ring[i] = {mk.x + std::cos(a) * radius, mk.y + std::sin(a) * radius};
+            }
+            const float alpha = std::max(0.f, 1.f - age / 8.f);
+            m_draw->drawPolygon(ring, 40, ccColor4F{c.r / 255.f, c.g / 255.f, c.b / 255.f, .12f * alpha}, 2.f / myZoom,
+                                ccColor4F{c.r / 255.f, c.g / 255.f, c.b / 255.f, alpha});
+        }
         // Players who left.
         for (auto it = m_trails.begin(); it != m_trails.end();) {
             if (!trails.contains(it->first)) {

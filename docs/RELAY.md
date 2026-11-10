@@ -70,3 +70,6 @@ several relays run side by side, one per region, with more added as the player c
 
 ## Public counters
 Since NexLevel v1.0.4 the relay answers `StatsRequest` with the number of open rooms and connected players (totals only). The mod shows them in its main-menu menu. **Update the relay** (`tools\relay-upload.ps1`) to enable it; older relays just close the connection and the menu shows "-".
+
+## Public rooms
+Since NexLevel v1.0.6 hosts can list their room (`Announce` on the control connection) and the mod asks the relay for the list (`ListRooms` → `RoomList`). **Update the relay** to enable it; older relays close the connection and the list stays empty.

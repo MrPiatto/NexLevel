@@ -59,6 +59,7 @@ struct SessionHost::Impl {
         Clock::time_point lastPingAnswered{};
         Clock::time_point opRefill = Clock::now();
         Clock::time_point lastChat{};
+        Clock::time_point lastMarker{};
     };
     struct Identity {  // survives the connection, for reconnects
         sync::PeerId id = 0;
@@ -332,6 +333,13 @@ struct SessionHost::Impl {
     std::size_t maxPlayers = kMaxPeers;      // other players allowed in (host not counted)
     bool settingsLocked = false;             // only the host may change the level settings
     std::vector<ChatMessage> chatInbox;
+    std::vector<Marker> markerInbox;
+    void broadcastMarker(const Marker& mk, std::uint32_t exceptConn) {
+        auto payload = encode(mk);
+        for (auto& [conn, p] : peers) {
+            if (p.joined && conn != exceptConn) sendTo(conn, MsgType::Marker, payload);
+        }
+    }
 
     void broadcastChat(const ChatMessage& msg, std::uint32_t exceptConn) {
         auto payload = encode(msg);
@@ -519,6 +527,17 @@ struct SessionHost::Impl {
             pr->peer = p.id;  // identity comes from the connection
             p.presence = pr;
             broadcastPresence(*pr, conn);
+            return;
+        }
+        if (static_cast<MsgType>(f.type) == MsgType::Marker) {
+            auto mk = decodeMarker(f.payload);
+            if (!mk) return;
+            const auto now = Clock::now();
+            if (now - p.lastMarker < std::chrono::milliseconds(800)) return;  // anti-spam
+            p.lastMarker = now;
+            mk->peer = p.id;
+            markerInbox.push_back(*mk);
+            broadcastMarker(*mk, conn);
             return;
         }
         if (static_cast<MsgType>(f.type) == MsgType::Chat) {
@@ -783,6 +802,11 @@ void SessionHost::sendChat(const std::string& text) {
     m->broadcastChat(msg, 0);
 }
 std::vector<ChatMessage> SessionHost::takeChat() { return std::exchange(m->chatInbox, {}); }
+void SessionHost::sendMarker(float x, float y) {
+    Marker mk{kHostPeer, x, y};
+    m->broadcastMarker(mk, 0);
+}
+std::vector<Marker> SessionHost::takeMarkers() { return std::exchange(m->markerInbox, {}); }
 
 bool SessionHost::kick(sync::PeerId peer) {
     for (auto it = m->peers.begin(); it != m->peers.end(); ++it) {
