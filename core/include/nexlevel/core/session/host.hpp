@@ -2,6 +2,7 @@
 // Embedded session server, run by the hosting player inside the game process.
 // Threading: networking runs on an internal thread; ALL session/sync logic runs on the caller's thread
 // inside pump() (call it once per frame from the game's main thread). Nothing here blocks.
+#include <nexlevel/core/relay/protocol.hpp>
 #include <nexlevel/core/session/messages.hpp>
 #include <nexlevel/core/session/ping.hpp>
 #include <nexlevel/core/session/playtest.hpp>
@@ -79,6 +80,15 @@ public:
     // Turn editing off/on for a player (their edits are undone on their side; they can still watch).
     void setViewOnly(sync::PeerId peer, bool on);
     bool isViewOnly(sync::PeerId peer) const;
+    // Room limits: how many players may join (1..16, host not counted), and whether only the host
+    // may change the level settings. ban(): kick and never let that GD account (or name) back in.
+    void setMaxPlayers(std::size_t n);
+    std::size_t maxPlayers() const;
+    void setSettingsLocked(bool on);
+    bool settingsLocked() const;
+    bool ban(sync::PeerId peer);
+    // Public room list on the relay (relay::encodeListing; nullopt = not listed). Sent within a second.
+    void setPublicListing(std::optional<std::array<std::uint8_t, relay::kListingSize>> listing);
     // Room chat. takeChat(): lines received since the last call (the host's own included).
     void sendChat(const std::string& text);
     std::vector<ChatMessage> takeChat();

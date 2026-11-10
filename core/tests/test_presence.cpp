@@ -127,6 +127,20 @@ void testChatAndViewOnly() {
     auto id2 = a.newId();
     if (id2) a.submitLocal(sync::Op::create(*id2, sync::PropMap{{1, "1"}}));
     CHECK(waitFor(pumpAll, [&] { return host.state().find(*id2) != nullptr; }, 3000));
+
+    // Ban: B is removed and cannot come back; max players refuses extra players.
+    const auto bId = *b.peerId();
+    CHECK(host.ban(bId));
+    CHECK(waitFor(pumpAll, [&] { return b.state() == ClientState::Kicked; }, 3000));
+    SessionClient b2(GameTarget::GD2208, "B");
+    b2.connect("127.0.0.1", host.port(), host.roomKey());
+    CHECK(waitFor([&] { host.pump(); b2.pump(); }, [&] { return b2.state() == ClientState::Refused; }, 3000));
+    CHECK(b2.refuseReason() == RefuseReason::Banned);
+    host.setMaxPlayers(1);  // A is already in
+    SessionClient c(GameTarget::GD2208, "C");
+    c.connect("127.0.0.1", host.port(), host.roomKey());
+    CHECK(waitFor([&] { host.pump(); c.pump(); }, [&] { return c.state() == ClientState::Refused; }, 3000));
+    CHECK(c.refuseReason() == RefuseReason::SessionFull);
     host.stop();
 }
 

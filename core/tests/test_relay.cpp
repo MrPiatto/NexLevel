@@ -101,6 +101,21 @@ void testRelaySession() {
         auto counters = relay::queryRelayStats({relay::RelayEndpoint{3, "test", "127.0.0.1", *rport}}, std::chrono::milliseconds(1500));
         CHECK(counters.size() == 1 && counters[0].has_value() && counters[0]->rooms == 1 && counters[0]->players == 4);
     }
+    if (joined) {  // public room list: listed, then unlisted
+        const relay::RelayEndpoint ep{3, "test", "127.0.0.1", *rport};
+        host.setPublicListing(relay::encodeListing(true, 3, 8, host.roomKey(), "HostName", "My Level"));
+        std::vector<relay::PublicRoom> rooms;
+        CHECK(waitFor(pumpAll, [&] {
+            rooms = relay::listPublicRooms(ep, std::chrono::milliseconds(800));
+            return rooms.size() == 1;
+        }, 5000));
+        if (rooms.size() == 1) {
+            CHECK(rooms[0].roomId == host.relayRoomId() && rooms[0].roomKey == host.roomKey());
+            CHECK(rooms[0].host == "HostName" && rooms[0].level == "My Level" && rooms[0].players == 3 && rooms[0].maxPlayers == 8);
+        }
+        host.setPublicListing(std::nullopt);
+        CHECK(waitFor(pumpAll, [&] { return relay::listPublicRooms(ep, std::chrono::milliseconds(800)).empty(); }, 5000));
+    }
     if (!joined) {
         for (auto& c : clients) std::printf("  client state %d err '%s'\n", static_cast<int>(c->state()), c->lastError().c_str());
         return;

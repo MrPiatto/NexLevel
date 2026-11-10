@@ -1,5 +1,7 @@
 #include <nexlevel/core/session/host.hpp>
 
+#include <nexlevel/core/sync/level_settings.hpp>
+
 #include "../net/connection.hpp"
 
 #include <nexlevel/core/crypto/secure_channel.hpp>
@@ -128,6 +130,9 @@ struct SessionHost::Impl {
     mutable std::mutex relayRttMutex;
     RttTracker relayRtt;
     std::deque<std::uint32_t> relayPingSeqs;
+    // Public listing on the relay (set on the main thread, sent by the network thread when it changes).
+    std::optional<std::array<std::uint8_t, relay::kListingSize>> listingWanted;
+    std::optional<std::array<std::uint8_t, relay::kListingSize>> listingSent;
     std::atomic<RelayState> relayStateA{RelayState::Off};
     std::atomic<std::uint32_t> relayRoomA{0};
     std::uint8_t relayIdValue = 0;  // main thread
@@ -217,7 +222,18 @@ struct SessionHost::Impl {
                 relayPingSeqs.push_back(ping ? ping->seq : 0);
                 while (relayPingSeqs.size() > 16) relayPingSeqs.pop_front();
             }
-            auto out = std::make_shared<std::vector<std::uint8_t>>(relay::encode(relay::Message{relay::Kind::Ping}));
+            auto out = std::make_shared<std::vector<std::uint8_t>>();
+            {
+                std::lock_guard lk(relayRttMutex);
+                if (listingWanted != listingSent) {  // (un)list the room, together with this ping
+                    relay::Message a{relay::Kind::Announce};
+                    if (listingWanted) a.listing = *listingWanted;  // all zero = not listed
+                    *out = relay::encode(a);
+                    listingSent = listingWanted;
+                }
+            }
+            auto ping = relay::encode(relay::Message{relay::Kind::Ping});
+            out->insert(out->end(), ping.begin(), ping.end());
             asio::async_write(*sock, asio::buffer(*out), [this, gen, sock, out](std::error_code wec, std::size_t) {
                 if (gen != relayGen) return;
                 if (wec) { relayLost("relay connection lost"); return; }
@@ -251,6 +267,7 @@ struct SessionHost::Impl {
         {
             std::lock_guard lk(relayRttMutex);
             relayPingSeqs.clear();  // pongs of the old connection will never come
+            listingSent.reset();    // a new relay connection has to be told again
         }
         setRelayError(std::move(reason));
         if (!relayEnabled) return;
@@ -310,6 +327,10 @@ struct SessionHost::Impl {
         return out;
     }
     std::set<sync::PeerId> viewOnly;   // players the host turned editing off for
+    std::set<std::uint32_t> bannedAccounts;  // banned GD accounts (and names, for players without one)
+    std::set<std::string> bannedNames;
+    std::size_t maxPlayers = kMaxPeers;      // other players allowed in (host not counted)
+    bool settingsLocked = false;             // only the host may change the level settings
     std::vector<ChatMessage> chatInbox;
 
     void broadcastChat(const ChatMessage& msg, std::uint32_t exceptConn) {
@@ -410,7 +431,13 @@ struct SessionHost::Impl {
             }
         }
         if (!resumed) {
-            if (joinedCount() >= kMaxPeers) {
+            const bool banned = (hello->accountId != 0 && bannedAccounts.contains(hello->accountId)) ||
+                                bannedNames.contains(hello->displayName);
+            if (banned) {
+                sendTo(conn, MsgType::Refuse, encode(Refuse{RefuseReason::Banned, target}), true);
+                return;
+            }
+            if (joinedCount() >= maxPlayers) {
                 sendTo(conn, MsgType::Refuse, encode(Refuse{RefuseReason::SessionFull, target}), true);
                 return;
             }
@@ -525,7 +552,8 @@ struct SessionHost::Impl {
             return;
         }
         const auto clientSeq = op->clientSeq;
-        if (viewOnly.contains(p.id)) {  // editing turned off by the host: undo it on that player's side
+        if (viewOnly.contains(p.id) || (settingsLocked && op->target == sync::kLevelSettingsId)) {
+            // Editing (or level settings) turned off by the host: undo it on that player's side.
             sendTo(conn, MsgType::Rejected, encode(Rejected{clientSeq, 2}));
             return;
         }
@@ -723,6 +751,30 @@ void SessionHost::setViewOnly(sync::PeerId peer, bool on) {
     if (changed) m->broadcastRoster();
 }
 bool SessionHost::isViewOnly(sync::PeerId peer) const { return m->viewOnly.contains(peer); }
+
+void SessionHost::setPublicListing(std::optional<std::array<std::uint8_t, relay::kListingSize>> listing) {
+    std::lock_guard lk(m->relayRttMutex);
+    if (!listing && !m->listingSent) {
+        m->listingWanted.reset();
+        return;
+    }
+    m->listingWanted = listing ? listing : std::optional<std::array<std::uint8_t, relay::kListingSize>>(std::array<std::uint8_t, relay::kListingSize>{});
+}
+
+void SessionHost::setMaxPlayers(std::size_t n) { m->maxPlayers = std::clamp<std::size_t>(n, 1, kMaxPeers); }
+std::size_t SessionHost::maxPlayers() const { return m->maxPlayers; }
+void SessionHost::setSettingsLocked(bool on) { m->settingsLocked = on; }
+bool SessionHost::settingsLocked() const { return m->settingsLocked; }
+
+bool SessionHost::ban(sync::PeerId peer) {
+    for (auto& [_, p] : m->peers) {
+        if (!p.joined || p.id != peer) continue;
+        if (p.accountId != 0) m->bannedAccounts.insert(p.accountId);
+        else m->bannedNames.insert(p.name);
+        return kick(peer);
+    }
+    return false;
+}
 
 void SessionHost::sendChat(const std::string& text) {
     ChatMessage msg{kHostPeer, cleanChatText(text)};

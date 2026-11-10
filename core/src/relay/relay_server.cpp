@@ -70,6 +70,7 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
         std::uint32_t nextStream = 0;
         std::map<std::uint32_t, Pending> pending;
         std::shared_ptr<std::atomic<std::size_t>> live = std::make_shared<std::atomic<std::size_t>>(0);
+        std::optional<std::array<std::uint8_t, kListingSize>> listing;  // public room (host's choice)
     };
     std::unordered_map<std::uint32_t, Room> rooms;  // io thread only
 
@@ -90,6 +91,7 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
         std::deque<std::vector<std::uint8_t>> queue;
         asio::steady_timer idle;
         std::array<std::uint8_t, kHeaderSize> header{};
+        std::array<std::uint8_t, kListingSize> listingBody{};
         bool closed = false;
 
         Control(Impl* i, SocketPtr s, SlotPtr sl, std::uint32_t room)
@@ -121,6 +123,19 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
             asio::async_read(*sock, asio::buffer(header), [self = shared_from_this()](std::error_code ec, std::size_t) {
                 if (ec) { self->close(); return; }
                 auto kind = decodeHeader(self->header);
+                if (kind == Kind::Announce) {  // the host (un)lists its room
+                    asio::async_read(*self->sock, asio::buffer(self->listingBody), [self](std::error_code bec, std::size_t) {
+                        if (bec) { self->close(); return; }
+                        auto it = self->impl->rooms.find(self->roomId);
+                        if (it != self->impl->rooms.end() && it->second.control.get() == self.get()) {
+                            if (self->listingBody[0] == 1) it->second.listing = self->listingBody;
+                            else it->second.listing.reset();
+                        }
+                        self->armIdle();
+                        self->readNext();
+                    });
+                    return;
+                }
                 if (!kind || *kind != Kind::Ping) { self->close(); return; }
                 self->armIdle();
                 self->send(Message{Kind::Pong});
@@ -235,6 +250,23 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
         asio::async_read(*sock, asio::buffer(hs->header), [this, sock, slot, hs](std::error_code rec, std::size_t) {
             if (rec) { hs->timer.cancel(); return; }
             auto kind = decodeHeader(hs->header);
+            if (kind == Kind::ListRooms) {  // public rooms for the mod's main menu
+                hs->timer.cancel();
+                std::vector<std::uint8_t> records;
+                std::uint16_t count = 0;
+                for (auto& [id, room] : rooms) {
+                    if (!room.listing || !room.control || count >= 100) continue;
+                    for (int b = 0; b < 4; ++b) records.push_back(static_cast<std::uint8_t>(id >> (8 * b)));
+                    records.insert(records.end(), room.listing->begin(), room.listing->end());
+                    ++count;
+                }
+                Message head{Kind::RoomList};
+                head.count = count;
+                auto reply = std::make_shared<std::vector<std::uint8_t>>(encode(head));
+                reply->insert(reply->end(), records.begin(), records.end());
+                asio::async_write(*sock, asio::buffer(*reply), [sock, reply](std::error_code, std::size_t) { closeSocket(*sock); });
+                return;
+            }
             if (kind == Kind::StatsRequest) {  // public counters for the mod's main menu
                 hs->timer.cancel();
                 Message st{Kind::Stats};

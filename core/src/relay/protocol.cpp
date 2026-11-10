@@ -24,6 +24,9 @@ std::optional<std::size_t> bodySize(Kind k) noexcept {
         case Kind::Probe: return 0;
         case Kind::StatsRequest: return 0;
         case Kind::Stats: return 8;
+        case Kind::Announce: return kListingSize;
+        case Kind::ListRooms: return 0;
+        case Kind::RoomList: return 2;
         case Kind::RoomOpened: return 12;
         case Kind::Incoming: return 4;
         case Kind::Pong: return 0;
@@ -46,7 +49,9 @@ std::vector<std::uint8_t> encode(const Message& m) {
         case Kind::Incoming: w.u32(m.stream); break;
         case Kind::Error: w.u8(static_cast<std::uint8_t>(m.error)); break;
         case Kind::Stats: w.u32(m.statRooms); w.u32(m.statPlayers); break;
-        case Kind::Ping: case Kind::Probe: case Kind::Pong: case Kind::Paired: case Kind::StatsRequest: break;
+        case Kind::Announce: for (auto b : m.listing) w.u8(b); break;
+        case Kind::RoomList: w.u16(m.count); break;
+        case Kind::Ping: case Kind::Probe: case Kind::Pong: case Kind::Paired: case Kind::StatsRequest: case Kind::ListRooms: break;
     }
     return w.take();
 }
@@ -79,7 +84,9 @@ std::optional<Message> decodeBody(Kind k, std::span<const std::uint8_t> body) {
             break;
         }
         case Kind::Stats: m.statRooms = r.u32(); m.statPlayers = r.u32(); break;
-        case Kind::Ping: case Kind::Probe: case Kind::Pong: case Kind::Paired: case Kind::StatsRequest: break;
+        case Kind::Announce: for (auto& b : m.listing) b = r.u8(); break;
+        case Kind::RoomList: m.count = r.u16(); break;
+        case Kind::Ping: case Kind::Probe: case Kind::Pong: case Kind::Paired: case Kind::StatsRequest: case Kind::ListRooms: break;
     }
     if (!r.atEnd()) return std::nullopt;
     return m;
@@ -172,6 +179,91 @@ std::vector<std::optional<RelayCounters>> queryRelayStats(const std::vector<Rela
         q->socket.close(ec);
         q->resolver.cancel();
     }
+    return out;
+}
+
+namespace {
+void putText(std::array<std::uint8_t, kListingSize>& out, std::size_t at, std::size_t len, const std::string& text) {
+    for (std::size_t i = 0; i < len && i < text.size(); ++i) {
+        const auto c = static_cast<unsigned char>(text[i]);
+        out[at + i] = (c >= 32 && c < 127) ? c : '?';  // plain ASCII only (shown with GD's fonts)
+    }
+}
+std::string getText(std::span<const std::uint8_t> in, std::size_t at, std::size_t len) {
+    std::string s;
+    for (std::size_t i = 0; i < len && in[at + i] != 0; ++i) {
+        const auto c = in[at + i];
+        s += (c >= 32 && c < 127) ? static_cast<char>(c) : '?';
+    }
+    return s;
+}
+} // namespace
+
+std::array<std::uint8_t, kListingSize> encodeListing(bool listed, std::uint8_t players, std::uint8_t maxPlayers,
+                                                      std::uint16_t roomKey, const std::string& host, const std::string& level) {
+    std::array<std::uint8_t, kListingSize> out{};
+    out[0] = listed ? 1 : 0;
+    out[1] = players;
+    out[2] = maxPlayers;
+    out[3] = static_cast<std::uint8_t>(roomKey & 0xFF);
+    out[4] = static_cast<std::uint8_t>(roomKey >> 8);
+    putText(out, 5, 21, host);
+    putText(out, 26, 22, level);
+    return out;
+}
+
+std::optional<PublicRoom> decodeListingRecord(std::span<const std::uint8_t> rec) {
+    if (rec.size() != kListingRecordSize) return std::nullopt;
+    PublicRoom r;
+    r.roomId = static_cast<std::uint32_t>(rec[0]) | (static_cast<std::uint32_t>(rec[1]) << 8) |
+               (static_cast<std::uint32_t>(rec[2]) << 16) | (static_cast<std::uint32_t>(rec[3]) << 24);
+    auto l = rec.subspan(4);
+    if (l[0] != 1 || r.roomId == 0) return std::nullopt;
+    r.players = l[1];
+    r.maxPlayers = l[2];
+    r.roomKey = static_cast<std::uint16_t>(l[3] | (l[4] << 8));
+    r.host = getText(l, 5, 21);
+    r.level = getText(l, 26, 22);
+    return r;
+}
+
+std::vector<PublicRoom> listPublicRooms(const RelayEndpoint& relay, std::chrono::milliseconds timeout) {
+    using asio::ip::tcp;
+    std::vector<PublicRoom> out;
+    asio::io_context io;
+    tcp::resolver resolver(io);
+    tcp::socket socket(io);
+    auto request = encode(Message{Kind::ListRooms});
+    std::array<std::uint8_t, kHeaderSize + 2> head{};
+    std::vector<std::uint8_t> records;
+    resolver.async_resolve(relay.host, std::to_string(relay.port), [&](std::error_code ec, tcp::resolver::results_type results) {
+        if (ec) return;
+        asio::async_connect(socket, results, [&](std::error_code cec, const tcp::endpoint&) {
+            if (cec) return;
+            asio::async_write(socket, asio::buffer(request), [&](std::error_code wec, std::size_t) {
+                if (wec) return;
+                asio::async_read(socket, asio::buffer(head), [&](std::error_code rec, std::size_t) {
+                    if (rec) return;
+                    std::span<const std::uint8_t> h(head);
+                    if (decodeHeader(h.first(kHeaderSize)) != Kind::RoomList) return;
+                    auto m = decodeBody(Kind::RoomList, h.subspan(kHeaderSize));
+                    if (!m || m->count == 0 || m->count > 200) return;
+                    records.resize(static_cast<std::size_t>(m->count) * kListingRecordSize);
+                    asio::async_read(socket, asio::buffer(records), [&](std::error_code rec2, std::size_t) {
+                        if (rec2) return;
+                        for (std::size_t i = 0; i + kListingRecordSize <= records.size(); i += kListingRecordSize) {
+                            if (auto r = decodeListingRecord(std::span<const std::uint8_t>(records).subspan(i, kListingRecordSize))) {
+                                out.push_back(std::move(*r));
+                            }
+                        }
+                    });
+                });
+            });
+        });
+    });
+    io.run_for(timeout);
+    std::error_code ec;
+    socket.close(ec);
     return out;
 }
 

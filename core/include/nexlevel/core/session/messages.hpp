@@ -36,7 +36,7 @@ enum class MsgType : std::uint16_t {
     Sealed = 20,       // encrypted envelope around any of the above (see crypto/secure_channel.hpp)
 };
 
-enum class RefuseReason : std::uint8_t { WrongGameVersion = 1, SessionFull = 2, BadHello = 3, WrongRoomCode = 4 };
+enum class RefuseReason : std::uint8_t { WrongGameVersion = 1, SessionFull = 2, BadHello = 3, WrongRoomCode = 4, Banned = 5 };
 
 struct PeerInfo {
     sync::PeerId id = 0;
