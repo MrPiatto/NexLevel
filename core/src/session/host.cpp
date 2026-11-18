@@ -135,6 +135,9 @@ struct SessionHost::Impl {
     // Public listing on the relay (set on the main thread, sent by the network thread when it changes).
     std::optional<std::array<std::uint8_t, relay::kListingSize>> listingWanted;
     std::optional<std::array<std::uint8_t, relay::kListingSize>> listingSent;
+    // Join requests (private listed room), guarded by relayRttMutex like the listing.
+    std::vector<SessionHost::JoinRequest> joinRequestsIn;
+    std::vector<std::pair<std::uint32_t, bool>> joinAnswersOut;
     std::atomic<RelayState> relayStateA{RelayState::Off};
     std::atomic<std::uint32_t> relayRoomA{0};
     std::uint8_t relayIdValue = 0;  // main thread
@@ -189,6 +192,11 @@ struct SessionHost::Impl {
                         schedulePing(gen, sock);
                         break;
                     case relay::Kind::Incoming: openRelayData(msg->stream); break;
+                    case relay::Kind::JoinAsk: {
+                        std::lock_guard lk(relayRttMutex);
+                        if (joinRequestsIn.size() < 32) joinRequestsIn.push_back({msg->stream, msg->name, msg->accountId});
+                        break;
+                    }
                     case relay::Kind::Pong: {
                         std::lock_guard lk(relayRttMutex);
                         if (!relayPingSeqs.empty()) {
@@ -233,6 +241,15 @@ struct SessionHost::Impl {
                     *out = relay::encode(a);
                     listingSent = listingWanted;
                 }
+                for (auto [id, accept] : joinAnswersOut) {  // answers to join requests, with this ping
+                    relay::Message a{relay::Kind::JoinAnswer};
+                    a.stream = id;
+                    a.accepted = accept;
+                    a.roomKey = roomKey;
+                    auto bytes = relay::encode(a);
+                    out->insert(out->end(), bytes.begin(), bytes.end());
+                }
+                joinAnswersOut.clear();
             }
             auto ping = relay::encode(relay::Message{relay::Kind::Ping});
             out->insert(out->end(), ping.begin(), ping.end());
@@ -797,6 +814,15 @@ void SessionHost::setPublicListing(std::optional<std::array<std::uint8_t, relay:
         return;
     }
     m->listingWanted = listing ? listing : std::optional<std::array<std::uint8_t, relay::kListingSize>>(std::array<std::uint8_t, relay::kListingSize>{});
+}
+
+std::vector<SessionHost::JoinRequest> SessionHost::takeJoinRequests() {
+    std::lock_guard lk(m->relayRttMutex);
+    return std::exchange(m->joinRequestsIn, {});
+}
+void SessionHost::answerJoinRequest(std::uint32_t id, bool accept) {
+    std::lock_guard lk(m->relayRttMutex);
+    m->joinAnswersOut.emplace_back(id, accept);
 }
 
 void SessionHost::setMaxPlayers(std::size_t n) { m->maxPlayers = std::clamp<std::size_t>(n, 1, kMaxPeers); }

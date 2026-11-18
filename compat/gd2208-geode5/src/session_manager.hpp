@@ -128,8 +128,11 @@ public:
     void editorClosed();
 
     // Host room settings (saved for next time): public listing, settings lock, max players, bans.
-    void setPublic(bool on);
-    bool isPublic() const { return m_public; }
+    // Room list visibility: Hidden (code only), Private (listed, players ask to join), Public.
+    enum class Visibility { Hidden = 0, Private = 1, Public = 2 };
+    void setVisibility(Visibility v);
+    Visibility visibility() const { return m_visibility; }
+    bool isPublic() const { return m_visibility == Visibility::Public; }
     void setSettingsLocked(bool on);
     bool settingsLocked() const;
     void setMaxPlayers(int n);
@@ -159,11 +162,15 @@ public:
         session::RoomAddress address;
         std::string host, level;
         int players = 0, maxPlayers = 0;
+        bool privateRoom = false;
     };
     void refreshPublicRooms();
     const std::vector<PublicRoomEntry>& publicRooms() const { return m_publicRooms; }
     bool publicRoomsLoading() const { return m_publicLoading; }
     std::string codeFor(const PublicRoomEntry& room) const;
+    // Private room: ask its host through the relay; joins by itself when accepted (notices otherwise).
+    void askToJoin(const PublicRoomEntry& room, bool fromEditor);
+    bool askPending() const { return m_askPending; }
 
     // Permissions (host: turn editing off for a player; everyone: see who is view-only).
     void setViewOnly(sync::PeerId peer, bool on);
@@ -185,7 +192,12 @@ private:
     std::chrono::steady_clock::time_point m_lastErase{};
     std::chrono::steady_clock::time_point m_lastSettingsAlert{};
     void alertsTick();
-    bool m_public = false;
+    Visibility m_visibility = Visibility::Private;
+    // Join requests for this host's private room, shown one at a time.
+    std::deque<session::SessionHost::JoinRequest> m_joinQueue;
+    bool m_joinPanelOpen = false;
+    bool m_askPending = false;
+    void joinRequestsTick();
     float m_localX = 0, m_localY = 0;
     std::vector<MarkerShown> m_markers;
     std::optional<sync::PeerId> m_follow;

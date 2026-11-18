@@ -9,6 +9,7 @@
 
 #include <asio.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <functional>
@@ -113,6 +114,37 @@ void testRelaySession() {
             CHECK(rooms[0].roomId == host.relayRoomId() && rooms[0].roomKey == host.roomKey());
             CHECK(rooms[0].host == "HostName" && rooms[0].level == "My Level" && rooms[0].players == 3 && rooms[0].maxPlayers == 8);
         }
+        // Private listing: shown without the key; a join request reaches the host, who accepts one
+        // (the player gets the key) and declines another.
+        host.setPublicListing(relay::encodeListing(true, 3, 8, host.roomKey(), "HostName", "Secret", true));
+        CHECK(waitFor(pumpAll, [&] {
+            rooms = relay::listPublicRooms(ep, std::chrono::milliseconds(800));
+            return rooms.size() == 1 && rooms[0].privateRoom;
+        }, 5000));
+        if (rooms.size() == 1) CHECK(rooms[0].roomKey == 0 && rooms[0].level == "Secret");
+        for (bool accept : {true, false}) {
+            relay::JoinRequestResult result;
+            std::atomic<bool> done{false};
+            std::thread asker([&] {
+                result = relay::requestJoin(ep, host.relayRoomId(), "Asker", 42, std::chrono::milliseconds(5000));
+                done = true;
+            });
+            std::vector<SessionHost::JoinRequest> asks;
+            CHECK(waitFor(pumpAll, [&] {
+                for (auto& r : host.takeJoinRequests()) asks.push_back(r);
+                return !asks.empty();
+            }, 4000));
+            if (!asks.empty()) {
+                CHECK(asks[0].name == "Asker" && asks[0].accountId == 42);
+                host.answerJoinRequest(asks[0].id, accept);
+            }
+            waitFor(pumpAll, [&] { return done.load(); }, 5000);
+            asker.join();
+            if (accept) CHECK(result.status == relay::JoinRequestResult::Status::Accepted && result.roomKey == host.roomKey());
+            else CHECK(result.status == relay::JoinRequestResult::Status::Declined && result.roomKey == 0);
+        }
+        // Public rooms can't be asked (they have a code); unknown rooms neither.
+        CHECK(relay::requestJoin(ep, 12345, "X", 0, std::chrono::milliseconds(2000)).status == relay::JoinRequestResult::Status::Failed);
         host.setPublicListing(std::nullopt);
         CHECK(waitFor(pumpAll, [&] { return relay::listPublicRooms(ep, std::chrono::milliseconds(800)).empty(); }, 5000));
     }

@@ -70,8 +70,11 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
         std::uint32_t nextStream = 0;
         std::map<std::uint32_t, Pending> pending;
         std::shared_ptr<std::atomic<std::size_t>> live = std::make_shared<std::atomic<std::size_t>>(0);
-        std::optional<std::array<std::uint8_t, kListingSize>> listing;  // public room (host's choice)
+        std::optional<std::array<std::uint8_t, kListingSize>> listing;  // listed room (host's choice)
+        std::uint32_t nextRequest = 0;
+        std::map<std::uint32_t, Pending> requests;  // players asking a private room's host to join
     };
+    std::unordered_map<std::string, std::deque<Clock::time_point>> requestTimes;  // per ip, io thread only
     std::unordered_map<std::uint32_t, Room> rooms;  // io thread only
 
     // ---- network ----
@@ -92,6 +95,7 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
         asio::steady_timer idle;
         std::array<std::uint8_t, kHeaderSize> header{};
         std::array<std::uint8_t, kListingSize> listingBody{};
+        std::array<std::uint8_t, 7> answerBody{};
         bool closed = false;
 
         Control(Impl* i, SocketPtr s, SlotPtr sl, std::uint32_t room)
@@ -128,8 +132,21 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
                         if (bec) { self->close(); return; }
                         auto it = self->impl->rooms.find(self->roomId);
                         if (it != self->impl->rooms.end() && it->second.control.get() == self.get()) {
-                            if (self->listingBody[0] == 1) it->second.listing = self->listingBody;
+                            if (self->listingBody[0] == 1 || self->listingBody[0] == 2) it->second.listing = self->listingBody;
                             else it->second.listing.reset();
+                        }
+                        self->armIdle();
+                        self->readNext();
+                    });
+                    return;
+                }
+                if (kind == Kind::JoinAnswer) {  // the host lets a player in (or not)
+                    asio::async_read(*self->sock, asio::buffer(self->answerBody), [self](std::error_code bec, std::size_t) {
+                        if (bec) { self->close(); return; }
+                        auto m = decodeBody(Kind::JoinAnswer, self->answerBody);
+                        auto it = self->impl->rooms.find(self->roomId);
+                        if (m && it != self->impl->rooms.end() && it->second.control.get() == self.get()) {
+                            self->impl->answerJoin(it->second, *m);
                         }
                         self->armIdle();
                         self->readNext();
@@ -157,6 +174,11 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
                     impl->sendError(p.sock, ErrorCode::NoRoom);
                 }
                 it->second.pending.clear();
+                for (auto& [id, p] : it->second.requests) {
+                    p.timer->cancel();
+                    impl->sendError(p.sock, ErrorCode::NoRoom);
+                }
+                it->second.requests.clear();
             }
         }
     };
@@ -240,7 +262,7 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
 
         struct Handshake {
             std::array<std::uint8_t, kHeaderSize> header{};
-            std::array<std::uint8_t, 16> body{};
+            std::array<std::uint8_t, 8 + kJoinNameSize> body{};  // largest handshake body
             asio::steady_timer timer;
             explicit Handshake(asio::io_context& io) : timer(io) {}
         };
@@ -282,7 +304,7 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
                 asio::async_write(*sock, asio::buffer(*pong), [sock, pong](std::error_code, std::size_t) { closeSocket(*sock); });
                 return;
             }
-            if (!kind || (*kind != Kind::OpenRoom && *kind != Kind::Accept && *kind != Kind::Join)) {
+            if (!kind || (*kind != Kind::OpenRoom && *kind != Kind::Accept && *kind != Kind::Join && *kind != Kind::JoinRequest)) {
                 hs->timer.cancel();
                 closeSocket(*sock);
                 return;
@@ -297,6 +319,7 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
                     case Kind::OpenRoom: openRoom(sock, slot, *msg); break;
                     case Kind::Join: join(sock, slot, *msg); break;
                     case Kind::Accept: accept(sock, slot, *msg); break;
+                    case Kind::JoinRequest: joinRequest(sock, slot, *msg); break;
                     default: closeSocket(*sock); break;
                 }
             });
@@ -362,6 +385,58 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
         room.control->send(Message{Kind::Incoming, 0, 0, stream});
     }
 
+    // A player asks a private (listed) room's host to let them in. Answered by JoinReply when the
+    // host decides, or by an error (no such room, too many requests, host too slow).
+    void joinRequest(const SocketPtr& sock, const SlotPtr& slot, const Message& m) {
+        auto& times = requestTimes[slot->ip];
+        const auto now = Clock::now();
+        while (!times.empty() && times.front() < now - std::chrono::minutes(1)) times.pop_front();
+        if (times.size() >= opt.maxJoinRequestsPerIpPerMinute) { ++refused; sendError(sock, ErrorCode::RelayBusy); return; }
+        times.push_back(now);
+        auto it = rooms.find(m.roomId);
+        if (it == rooms.end() || !it->second.control || !it->second.listing || (*it->second.listing)[0] != 2) {
+            sendError(sock, ErrorCode::NoRoom);
+            return;
+        }
+        Room& room = it->second;
+        if (room.requests.size() >= opt.maxJoinRequestsPerRoom) { ++refused; sendError(sock, ErrorCode::RelayBusy); return; }
+        if (++room.nextRequest == 0) ++room.nextRequest;
+        const auto id = room.nextRequest;
+        auto timer = std::make_shared<asio::steady_timer>(io);
+        timer->expires_after(opt.joinRequestTimeout);
+        const auto roomId = room.id;
+        timer->async_wait([this, roomId, id](std::error_code ec) {
+            if (ec) return;
+            auto r = rooms.find(roomId);
+            if (r == rooms.end()) return;
+            auto p = r->second.requests.find(id);
+            if (p == r->second.requests.end()) return;
+            auto s = p->second.sock;
+            r->second.requests.erase(p);
+            sendError(s, ErrorCode::Timeout);
+        });
+        room.requests.emplace(id, Pending{sock, slot, timer});
+        Message ask{Kind::JoinAsk};
+        ask.stream = id;
+        ask.accountId = m.accountId;
+        ask.name = m.name;
+        room.control->send(ask);
+    }
+
+    void answerJoin(Room& room, const Message& m) {
+        auto p = room.requests.find(m.stream);
+        if (p == room.requests.end()) return;  // already timed out
+        Pending pending = std::move(p->second);
+        room.requests.erase(p);
+        pending.timer->cancel();
+        Message reply{Kind::JoinReply};
+        reply.accepted = m.accepted;
+        reply.roomKey = m.roomKey;
+        auto out = std::make_shared<std::vector<std::uint8_t>>(encode(reply));
+        auto sock = pending.sock;
+        asio::async_write(*sock, asio::buffer(*out), [sock, out](std::error_code, std::size_t) { closeSocket(*sock); });
+    }
+
     void accept(const SocketPtr& hostSock, const SlotPtr& hostSlot, const Message& m) {
         auto it = rooms.find(m.roomId);
         if (it == rooms.end() || it->second.secret != m.secret) { closeSocket(*hostSock); return; }
@@ -389,6 +464,11 @@ struct RelayServer::Impl : std::enable_shared_from_this<RelayServer::Impl> {
             }
             roomCount = rooms.size();
             const auto cutoff = now - std::chrono::minutes(1);
+            for (auto it = requestTimes.begin(); it != requestTimes.end();) {
+                while (!it->second.empty() && it->second.front() < cutoff) it->second.pop_front();
+                if (it->second.empty()) it = requestTimes.erase(it);
+                else ++it;
+            }
             for (auto it = ips.begin(); it != ips.end();) {
                 auto& f = it->second.failures;
                 while (!f.empty() && f.front() < cutoff) f.pop_front();
@@ -434,6 +514,7 @@ void RelayServer::stop() {
     for (auto& [id, room] : m->rooms) {
         if (room.control) closeSocket(*room.control->sock);
         for (auto& [s, p] : room.pending) closeSocket(*p.sock);
+        for (auto& [s, p] : room.requests) closeSocket(*p.sock);
     }
     m->rooms.clear();
     m->cleanupTimer.reset();

@@ -15,6 +15,30 @@ const char* toString(ErrorCode e) noexcept {
     return "relay error";
 }
 
+namespace {
+// Fixed-size zero-padded ASCII name (anything else becomes '?').
+void putName(ByteWriter& w, const std::string& name) {
+    for (std::size_t i = 0; i < kJoinNameSize; ++i) {
+        std::uint8_t c = 0;
+        if (i < name.size()) {
+            const auto u = static_cast<unsigned char>(name[i]);
+            c = (u >= 32 && u < 127) ? u : '?';
+        }
+        w.u8(c);
+    }
+}
+std::string getName(ByteReader& r) {
+    std::string s;
+    bool ended = false;
+    for (std::size_t i = 0; i < kJoinNameSize; ++i) {
+        const auto c = r.u8();
+        if (c == 0) ended = true;
+        if (!ended) s += (c >= 32 && c < 127) ? static_cast<char>(c) : '?';
+    }
+    return s;
+}
+} // namespace
+
 std::optional<std::size_t> bodySize(Kind k) noexcept {
     switch (k) {
         case Kind::OpenRoom: return 12;
@@ -32,6 +56,10 @@ std::optional<std::size_t> bodySize(Kind k) noexcept {
         case Kind::Pong: return 0;
         case Kind::Paired: return 0;
         case Kind::Error: return 1;
+        case Kind::JoinRequest: return 8 + kJoinNameSize;
+        case Kind::JoinAnswer: return 7;
+        case Kind::JoinAsk: return 8 + kJoinNameSize;
+        case Kind::JoinReply: return 3;
     }
     return std::nullopt;
 }
@@ -51,6 +79,10 @@ std::vector<std::uint8_t> encode(const Message& m) {
         case Kind::Stats: w.u32(m.statRooms); w.u32(m.statPlayers); break;
         case Kind::Announce: for (auto b : m.listing) w.u8(b); break;
         case Kind::RoomList: w.u16(m.count); break;
+        case Kind::JoinRequest: w.u32(m.roomId); w.u32(m.accountId); putName(w, m.name); break;
+        case Kind::JoinAsk: w.u32(m.stream); w.u32(m.accountId); putName(w, m.name); break;
+        case Kind::JoinAnswer: w.u32(m.stream); w.u8(m.accepted ? 1 : 0); w.u16(m.accepted ? m.roomKey : 0); break;
+        case Kind::JoinReply: w.u8(m.accepted ? 1 : 0); w.u16(m.accepted ? m.roomKey : 0); break;
         case Kind::Ping: case Kind::Probe: case Kind::Pong: case Kind::Paired: case Kind::StatsRequest: case Kind::ListRooms: break;
     }
     return w.take();
@@ -86,6 +118,23 @@ std::optional<Message> decodeBody(Kind k, std::span<const std::uint8_t> body) {
         case Kind::Stats: m.statRooms = r.u32(); m.statPlayers = r.u32(); break;
         case Kind::Announce: for (auto& b : m.listing) b = r.u8(); break;
         case Kind::RoomList: m.count = r.u16(); break;
+        case Kind::JoinRequest: m.roomId = r.u32(); m.accountId = r.u32(); m.name = getName(r); break;
+        case Kind::JoinAsk: m.stream = r.u32(); m.accountId = r.u32(); m.name = getName(r); break;
+        case Kind::JoinAnswer: {
+            m.stream = r.u32();
+            const auto a = r.u8();
+            m.roomKey = r.u16();
+            if (a > 1) return std::nullopt;
+            m.accepted = a == 1;
+            break;
+        }
+        case Kind::JoinReply: {
+            const auto a = r.u8();
+            m.roomKey = r.u16();
+            if (a > 1) return std::nullopt;
+            m.accepted = a == 1;
+            break;
+        }
         case Kind::Ping: case Kind::Probe: case Kind::Pong: case Kind::Paired: case Kind::StatsRequest: case Kind::ListRooms: break;
     }
     if (!r.atEnd()) return std::nullopt;
@@ -200,9 +249,11 @@ std::string getText(std::span<const std::uint8_t> in, std::size_t at, std::size_
 } // namespace
 
 std::array<std::uint8_t, kListingSize> encodeListing(bool listed, std::uint8_t players, std::uint8_t maxPlayers,
-                                                      std::uint16_t roomKey, const std::string& host, const std::string& level) {
+                                                      std::uint16_t roomKey, const std::string& host, const std::string& level,
+                                                      bool privateRoom) {
     std::array<std::uint8_t, kListingSize> out{};
-    out[0] = listed ? 1 : 0;
+    out[0] = listed ? (privateRoom ? 2 : 1) : 0;
+    if (privateRoom) roomKey = 0;  // a private room's key is only given to players the host accepts
     out[1] = players;
     out[2] = maxPlayers;
     out[3] = static_cast<std::uint8_t>(roomKey & 0xFF);
@@ -218,10 +269,11 @@ std::optional<PublicRoom> decodeListingRecord(std::span<const std::uint8_t> rec)
     r.roomId = static_cast<std::uint32_t>(rec[0]) | (static_cast<std::uint32_t>(rec[1]) << 8) |
                (static_cast<std::uint32_t>(rec[2]) << 16) | (static_cast<std::uint32_t>(rec[3]) << 24);
     auto l = rec.subspan(4);
-    if (l[0] != 1 || r.roomId == 0) return std::nullopt;
+    if ((l[0] != 1 && l[0] != 2) || r.roomId == 0) return std::nullopt;
+    r.privateRoom = l[0] == 2;
     r.players = l[1];
     r.maxPlayers = l[2];
-    r.roomKey = static_cast<std::uint16_t>(l[3] | (l[4] << 8));
+    r.roomKey = r.privateRoom ? 0 : static_cast<std::uint16_t>(l[3] | (l[4] << 8));
     r.host = getText(l, 5, 21);
     r.level = getText(l, 26, 22);
     return r;
@@ -256,6 +308,54 @@ std::vector<PublicRoom> listPublicRooms(const RelayEndpoint& relay, std::chrono:
                                 out.push_back(std::move(*r));
                             }
                         }
+                    });
+                });
+            });
+        });
+    });
+    io.run_for(timeout);
+    std::error_code ec;
+    socket.close(ec);
+    return out;
+}
+
+JoinRequestResult requestJoin(const RelayEndpoint& relay, std::uint32_t roomId, const std::string& name, std::uint32_t accountId,
+                              std::chrono::milliseconds timeout) {
+    using asio::ip::tcp;
+    JoinRequestResult out;
+    out.error = "the relay did not answer";
+    asio::io_context io;
+    tcp::resolver resolver(io);
+    tcp::socket socket(io);
+    Message req{Kind::JoinRequest};
+    req.roomId = roomId;
+    req.accountId = accountId;
+    req.name = name;
+    auto request = encode(req);
+    std::array<std::uint8_t, kHeaderSize> head{};
+    std::vector<std::uint8_t> body;
+    resolver.async_resolve(relay.host, std::to_string(relay.port), [&](std::error_code ec, tcp::resolver::results_type results) {
+        if (ec) return;
+        asio::async_connect(socket, results, [&](std::error_code cec, const tcp::endpoint&) {
+            if (cec) return;
+            asio::async_write(socket, asio::buffer(request), [&](std::error_code wec, std::size_t) {
+                if (wec) return;
+                asio::async_read(socket, asio::buffer(head), [&](std::error_code rec, std::size_t) {
+                    if (rec) { out.error = "the relay closed the request (older relay?)"; return; }
+                    auto kind = decodeHeader(head);
+                    if (kind != Kind::JoinReply && kind != Kind::Error) return;
+                    body.resize(*bodySize(*kind));
+                    asio::async_read(socket, asio::buffer(body), [&, kind](std::error_code rec2, std::size_t) {
+                        if (rec2) return;
+                        auto m = decodeBody(*kind, body);
+                        if (!m) return;
+                        if (m->kind == Kind::Error) {
+                            out.error = toString(m->error);
+                            return;
+                        }
+                        out.status = m->accepted ? JoinRequestResult::Status::Accepted : JoinRequestResult::Status::Declined;
+                        out.roomKey = m->roomKey;
+                        out.error.clear();
                     });
                 });
             });

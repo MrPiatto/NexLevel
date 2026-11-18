@@ -1,6 +1,7 @@
 // Collaboration extras: room chat, view-only players and the "GD closed during a room" report prompt.
 #include "session_manager.hpp"
 #include "toast.hpp"
+#include "join_request.hpp"
 #include "relay_directory.hpp"
 
 #include <Geode/modify/MenuLayer.hpp>
@@ -89,15 +90,18 @@ void SessionManager::applyHostSettings() {
     if (!m_host) return;
     m_host->setMaxPlayers(static_cast<std::size_t>(maxPlayers()));
     m_host->setSettingsLocked(Mod::get()->getSavedValue<bool>("room-settings-locked", false));
-    m_public = Mod::get()->getSavedValue<bool>("room-public", false);
+    // Older versions saved a public on/off switch; the default is now a private listed room.
+    const auto legacyPublic = Mod::get()->getSavedValue<bool>("room-public", false);
+    const auto saved = Mod::get()->getSavedValue<int64_t>("room-visibility", legacyPublic ? 2 : 1);
+    m_visibility = static_cast<Visibility>(std::clamp<int64_t>(saved, 0, 2));
     m_lastListing = {};
 }
 
-void SessionManager::setPublic(bool on) {
-    m_public = on;
-    Mod::get()->setSavedValue<bool>("room-public", on);
+void SessionManager::setVisibility(Visibility v) {
+    m_visibility = v;
+    Mod::get()->setSavedValue<int64_t>("room-visibility", static_cast<int64_t>(v));
     m_lastListing = {};  // send now
-    if (m_host && !on) m_host->setPublicListing(std::nullopt);
+    if (m_host && v == Visibility::Hidden) m_host->setPublicListing(std::nullopt);
 }
 
 void SessionManager::setSettingsLocked(bool on) {
@@ -180,6 +184,7 @@ void SessionManager::refreshPublicRooms() {
                 e.level = pr.level;
                 e.players = pr.players;
                 e.maxPlayers = pr.maxPlayers;
+                e.privateRoom = pr.privateRoom;
                 found.push_back(std::move(e));
             }
         }
@@ -187,6 +192,74 @@ void SessionManager::refreshPublicRooms() {
             auto* sm = SessionManager::get();
             sm->m_publicRooms = std::move(found);
             sm->m_publicLoading = false;
+        });
+    }).detach();
+}
+
+// ---------------------------------------------------------------- private rooms: join requests
+void SessionManager::joinRequestsTick() {
+    if (!m_host) {
+        m_joinQueue.clear();
+        return;
+    }
+    for (auto& r : m_host->takeJoinRequests()) {
+        if (m_visibility != Visibility::Private) {  // no longer asking: say no right away
+            m_host->answerJoinRequest(r.id, false);
+            continue;
+        }
+        toast("Join request", r.name + " wants to join your room", ToastKind::Info);
+        m_joinQueue.push_back(std::move(r));
+    }
+    if (m_joinPanelOpen || m_joinQueue.empty() || !CCDirector::sharedDirector()->getRunningScene()) return;
+    auto req = std::move(m_joinQueue.front());
+    m_joinQueue.pop_front();
+    m_joinPanelOpen = true;
+    const auto id = req.id;
+    showJoinRequestPanel(req.name, [id](bool accept) {
+        auto* sm = SessionManager::get();
+        sm->m_joinPanelOpen = false;
+        if (sm->m_host) sm->m_host->answerJoinRequest(id, accept);
+    });
+}
+
+void SessionManager::askToJoin(const PublicRoomEntry& room, bool fromEditor) {
+    if (m_askPending) {
+        toast("Request already sent", "Waiting for the host to answer", ToastKind::Info);
+        return;
+    }
+    std::optional<relay::RelayEndpoint> endpoint;
+    for (const auto& r : relayDirectory()) {
+        if (r.id == room.relayId) endpoint = r;
+    }
+    if (!endpoint) {
+        toast("Can't reach this room", "Its relay is not in your relay list", ToastKind::Error);
+        return;
+    }
+    m_askPending = true;
+    toast("Request sent", "Waiting for " + room.host + " to accept", ToastKind::Info);
+    const auto name = displayName();
+    const auto account = static_cast<std::uint32_t>(std::max(0, GJAccountManager::sharedState()->m_accountID));
+    std::thread([endpoint = *endpoint, room, name, account, fromEditor] {
+        auto result = relay::requestJoin(endpoint, room.address.relayRoom, name, account, std::chrono::seconds(50));
+        geode::queueInMainThread([result = std::move(result), room, fromEditor]() mutable {
+            auto* sm = SessionManager::get();
+            sm->m_askPending = false;
+            using St = relay::JoinRequestResult::Status;
+            if (result.status == St::Declined) {
+                toast("Request declined", room.host + " didn't let you in", ToastKind::Error);
+                return;
+            }
+            if (result.status != St::Accepted) {
+                toast("Request failed", result.error, ToastKind::Error);
+                return;
+            }
+            if (sm->inSession()) return;  // joined something else meanwhile
+            room.address.key = result.roomKey;
+            std::string error;
+            const auto code = session::encodeRoomCode(room.address);
+            const bool ok = fromEditor && sm->m_editor ? sm->join(code, &error) : sm->joinFromMenu(code, &error);
+            if (ok) toast("Request accepted", "Joining " + room.host + "'s room", ToastKind::Success);
+            else toast("Could not join", error, ToastKind::Error);
         });
     }).detach();
 }
@@ -219,14 +292,15 @@ void SessionManager::featuresTick() {
     std::erase_if(m_markers, [&](auto& m) { return nowT - m.at > std::chrono::seconds(8); });
 
     // Public listing on the relay (host), refreshed every few seconds with the player count.
-    if (m_host && m_public && nowT - m_lastListing > std::chrono::seconds(5)) {
+    if (m_host && m_visibility != Visibility::Hidden && nowT - m_lastListing > std::chrono::seconds(5)) {
         m_lastListing = nowT;
         std::string level = m_roomLevel ? std::string(m_roomLevel->m_levelName) : std::string("Level");
         const auto others = static_cast<std::uint8_t>(std::min<std::size_t>(playerCount(), 255));
         m_host->setPublicListing(relay::encodeListing(true, static_cast<std::uint8_t>(others + 1),
                                                       static_cast<std::uint8_t>(maxPlayers() + 1), m_host->roomKey(),
-                                                      displayName(), level));
+                                                      displayName(), level, m_visibility == Visibility::Private));
     }
+    joinRequestsTick();
 
     alertsTick();
 

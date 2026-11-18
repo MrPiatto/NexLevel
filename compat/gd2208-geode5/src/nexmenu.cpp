@@ -115,7 +115,7 @@ void NexMenu::buildTab() {
     m_dynamic.clear();
     m_codeInput = m_relayInput = m_chatInput = nullptr;
     m_communityText = nullptr;
-    m_publicCodes.clear();
+    m_shownRooms.clear();
     m_codeText = m_onlineText = m_statPlayers = m_statObjects = m_statUptime = nullptr;
     m_pingRows.clear();
     m_gauge = nullptr;
@@ -185,7 +185,7 @@ void NexMenu::buildRoom() {
                       190.f, 180.f);
             const auto& rooms = sm->publicRooms();
             if (rooms.empty()) {
-                addText(sm->publicRoomsLoading() ? "Looking for rooms..." : "No public rooms right now", 8.f, 16.f + 103.f, 140.f,
+                addText(sm->publicRoomsLoading() ? "Looking for rooms..." : "No rooms right now", 8.f, 16.f + 103.f, 140.f,
                         kit::kMuted, 0, {.5f, .5f});
                 addText("Host from your level's editor:", 7.f, 16.f + 103.f, 112.f, kit::kMuted, 0, {.5f, .5f});
                 addText("Esc > NexLevel Collab > Host room", 7.f, 16.f + 103.f, 100.f, kit::kText, 0, {.5f, .5f});
@@ -194,13 +194,18 @@ void NexMenu::buildRoom() {
             for (std::size_t i = 0; i < rooms.size() && i < 4; ++i, ry -= 24.f) {
                 const auto& r = rooms[i];
                 auto* t = addText(r.level, 7.5f, 28.f, ry + 4.f, kit::kText, 1);
-                if (t->getContentSize().width > 120.f) t->setScale(120.f / t->getContentSize().width);
+                if (t->getContentSize().width > 110.f) t->setScale(110.f / t->getContentSize().width);
                 addText(r.host + "  " + std::to_string(r.players) + "/" + std::to_string(r.maxPlayers), 6.3f, 28.f, ry - 6.f, kit::kMuted);
+                if (r.privateRoom) {  // listed, but the host decides who comes in
+                    auto* chip = kit::chip("Private", kit::kWarn, 5.5f);
+                    add(chip, 150.f, ry + 4.f);
+                }
                 const bool full = r.players >= r.maxPlayers;
-                auto* j = kit::button(full ? "Full" : "Join", {40.f, 17.f}, full ? kit::Style::Secondary : kit::Style::Primary, this,
-                                      menu_selector(NexMenu::onJoinPublic), 7.f);
-                j->setTag(static_cast<int>(m_publicCodes.size()));
-                m_publicCodes.push_back(sm->codeFor(r));
+                const char* caption = full ? "Full" : r.privateRoom ? "Ask" : "Join";
+                auto* j = kit::button(caption, {40.f, 17.f}, full ? kit::Style::Secondary : r.privateRoom ? kit::Style::Secondary : kit::Style::Primary,
+                                      this, menu_selector(NexMenu::onJoinPublic), 7.f);
+                j->setTag(static_cast<int>(m_shownRooms.size()));
+                m_shownRooms.push_back(r);
                 j->setEnabled(!full);
                 addButton(j, 190.f, ry);
             }
@@ -402,10 +407,14 @@ void NexMenu::buildSettings() {
         // Room settings (host): public listing, level settings lock, max players.
         auto* sm = SessionManager::get();
         add(kit::card({428.f, 52.f}, 10.f, glass, edge, .6f), W / 2.f, y - 10.f);
-        addText("Public room", 8.5f, 32.f, y + 4.f, kit::kText, 1);
-        addText("Listed in everyone's main menu", 6.3f, 32.f, y - 7.f, kit::kMuted);
-        auto* pub = CCMenuItemSpriteExtra::create(kit::Toggle::create(sm->isPublic()), this, menu_selector(NexMenu::onTogglePublic));
-        addButton(pub, 168.f, y - 2.f);
+        using V = SessionManager::Visibility;
+        const auto vis = sm->visibility();
+        addText("Room list", 8.5f, 32.f, y + 4.f, kit::kText, 1);
+        addText(vis == V::Public ? "Anyone joins from the list" : vis == V::Private ? "Listed - players ask you" : "Not listed - code only", 6.3f, 32.f,
+                y - 7.f, kit::kMuted);
+        auto* pub = kit::button(vis == V::Public ? "Public" : vis == V::Private ? "Private" : "Hidden", {50.f, 17.f},
+                                vis == V::Public ? kit::Style::Primary : kit::Style::Secondary, this, menu_selector(NexMenu::onTogglePublic), 7.f);
+        addButton(pub, 160.f, y - 2.f);
         addText("Lock level settings", 8.5f, 200.f, y + 4.f, kit::kText, 1);
         addText("Only you change colours, song...", 6.3f, 200.f, y - 7.f, kit::kMuted);
         auto* lock = CCMenuItemSpriteExtra::create(kit::Toggle::create(sm->settingsLocked()), this, menu_selector(NexMenu::onToggleLock));
@@ -648,9 +657,14 @@ void NexMenu::onExit() {
 void NexMenu::onJoinPublic(CCObject* sender) {
     const auto i = static_cast<std::size_t>(static_cast<CCNode*>(sender)->getTag());
     auto* sm = SessionManager::get();
-    if (i >= m_publicCodes.size()) return;
+    if (i >= m_shownRooms.size()) return;
+    const auto room = m_shownRooms[i];
+    if (room.privateRoom) {  // the host gets a request; joining happens once they accept
+        sm->askToJoin(room, m_fromEditor);
+        return;
+    }
     std::string error;
-    const std::string code = m_publicCodes[i];
+    const std::string code = sm->codeFor(room);
     const bool ok = m_fromEditor ? sm->join(code, &error) : sm->joinFromMenu(code, &error);
     if (!ok) {
         notify(error, NotificationIcon::Error);
@@ -665,12 +679,17 @@ void NexMenu::onRefreshRooms(CCObject*) {
     buildTab();
 }
 
-void NexMenu::onTogglePublic(CCObject* sender) {
+void NexMenu::onTogglePublic(CCObject*) {
     auto* sm = SessionManager::get();
-    sm->setPublic(!sm->isPublic());
-    if (auto* t = typeinfo_cast<kit::Toggle*>(static_cast<CCMenuItemSpriteExtra*>(sender)->getNormalImage())) t->setOn(sm->isPublic());
-    notify(sm->isPublic() ? "Room listed - anyone can find it in the main menu" : "Room unlisted - only people with the code can join",
+    using V = SessionManager::Visibility;
+    // Private -> Public -> Hidden -> Private
+    const auto next = sm->visibility() == V::Private ? V::Public : sm->visibility() == V::Public ? V::Hidden : V::Private;
+    sm->setVisibility(next);
+    notify(next == V::Public    ? "Public room - anyone can join it from the main menu"
+           : next == V::Private ? "Private room - listed, players ask you to join"
+                                : "Hidden room - only people with the code can join",
            NotificationIcon::Info);
+    buildTab();
 }
 
 void NexMenu::onToggleLock(CCObject* sender) {

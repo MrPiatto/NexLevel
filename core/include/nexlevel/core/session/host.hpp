@@ -89,6 +89,15 @@ public:
     bool ban(sync::PeerId peer);
     // Public room list on the relay (relay::encodeListing; nullopt = not listed). Sent within a second.
     void setPublicListing(std::optional<std::array<std::uint8_t, relay::kListingSize>> listing);
+    // Private listed rooms: players asking to join through the relay. answerJoinRequest() gives an
+    // accepted player the room key (sent within a second); unanswered requests expire on the relay.
+    struct JoinRequest {
+        std::uint32_t id = 0;
+        std::string name;
+        std::uint32_t accountId = 0;
+    };
+    std::vector<JoinRequest> takeJoinRequests();
+    void answerJoinRequest(std::uint32_t id, bool accept);
     // Room chat. takeChat(): lines received since the last call (the host's own included).
     void sendChat(const std::string& text);
     std::vector<ChatMessage> takeChat();

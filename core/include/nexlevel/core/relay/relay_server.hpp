@@ -28,6 +28,9 @@ public:
         std::chrono::seconds pairTimeout{8};        // host must open the data connection
         std::chrono::seconds controlIdleTimeout{60};  // hosts ping every 15 s
         std::chrono::seconds reclaimWindow{90};     // host may reclaim its room id after a drop
+        std::chrono::seconds joinRequestTimeout{45};  // a private room's host must answer within this
+        std::size_t maxJoinRequestsPerRoom = 8;       // waiting at once
+        std::size_t maxJoinRequestsPerIpPerMinute = 6;
     };
 
     RelayServer();

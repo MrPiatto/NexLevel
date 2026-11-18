@@ -36,6 +36,9 @@ enum class Kind : std::uint8_t {
     StatsRequest = 6, // public counters, no body: the relay answers Stats and closes
     Announce = 7,     // host control: kListingSize bytes, the room's public listing (byte 0 = 0: not listed)
     ListRooms = 8,    // no body: the relay answers RoomList and closes
+    JoinRequest = 9,  // player: u32 roomId, u32 accountId, 24 bytes name. Asks a private room's host to
+                      // let them in; the relay answers JoinReply (or Error) and closes
+    JoinAnswer = 10,  // host control: u32 requestId, u8 accepted, u16 roomKey
     // from the relay
     RoomOpened = 0x81,  // u32 roomId, u64 secret
     Incoming = 0x82,    // u32 stream: open a data connection for it
@@ -44,6 +47,8 @@ enum class Kind : std::uint8_t {
     Error = 0x85,       // u8 ErrorCode, then the relay closes
     Stats = 0x86,       // u32 rooms, u32 players (hosts + joined players right now)
     RoomList = 0x87,    // u16 count, then count records of (u32 roomId + kListingSize listing bytes)
+    JoinAsk = 0x88,     // to the host: u32 requestId, u32 accountId, 24 bytes name (someone asks to join)
+    JoinReply = 0x89,   // to the player: u8 accepted, u16 roomKey (0 when declined)
 };
 
 enum class ErrorCode : std::uint8_t { NoRoom = 1, RoomFull = 2, RelayBusy = 3, BadRequest = 4, Timeout = 5 };
@@ -63,10 +68,17 @@ struct Message {
     std::uint32_t statPlayers = 0;
     std::array<std::uint8_t, 48> listing{};
     std::uint16_t count = 0;
+    // Join requests (stream = request id).
+    std::string name;  // up to kJoinNameSize ASCII characters
+    std::uint32_t accountId = 0;
+    bool accepted = false;
+    std::uint16_t roomKey = 0;
 };
+inline constexpr std::size_t kJoinNameSize = 24;
 
-// Public room listing (opt-in by the host). Fixed 48 bytes: u8 listed, u8 players, u8 maxPlayers,
-// u16 roomKey, 21 bytes host name, 22 bytes level name (zero padded).
+// Room listing (opt-in by the host). Fixed 48 bytes: u8 listed (0 no, 1 public, 2 private: shown,
+// joined by asking the host), u8 players, u8 maxPlayers, u16 roomKey (0 for private rooms),
+// 21 bytes host name, 22 bytes level name (zero padded).
 inline constexpr std::size_t kListingSize = 48;
 inline constexpr std::size_t kListingRecordSize = 4 + kListingSize;
 struct PublicRoom {
@@ -76,9 +88,11 @@ struct PublicRoom {
     std::uint8_t maxPlayers = 0;
     std::string host;
     std::string level;
+    bool privateRoom = false;  // no key: join with requestJoin()
 };
 std::array<std::uint8_t, kListingSize> encodeListing(bool listed, std::uint8_t players, std::uint8_t maxPlayers,
-                                                      std::uint16_t roomKey, const std::string& host, const std::string& level);
+                                                      std::uint16_t roomKey, const std::string& host, const std::string& level,
+                                                      bool privateRoom = false);
 std::optional<PublicRoom> decodeListingRecord(std::span<const std::uint8_t> record);
 
 std::vector<std::uint8_t> encode(const Message& m);
@@ -101,6 +115,14 @@ struct RelayCounters {
 std::vector<std::optional<RelayCounters>> queryRelayStats(const std::vector<RelayEndpoint>& relays, std::chrono::milliseconds timeout);
 // Public rooms listed on a relay (blocking). Empty if none, unreachable or an older relay.
 std::vector<PublicRoom> listPublicRooms(const RelayEndpoint& relay, std::chrono::milliseconds timeout);
+// Asks a private room's host to let this player in (blocking until the host answers, up to `timeout`).
+struct JoinRequestResult {
+    enum class Status { Accepted, Declined, Failed } status = Status::Failed;
+    std::uint16_t roomKey = 0;  // Accepted: join the room with it
+    std::string error;          // Failed: why
+};
+JoinRequestResult requestJoin(const RelayEndpoint& relay, std::uint32_t roomId, const std::string& name, std::uint32_t accountId,
+                              std::chrono::milliseconds timeout);
 // Header check: nullopt if magic/version/kind is wrong.
 std::optional<Kind> decodeHeader(std::span<const std::uint8_t> header);
 std::optional<Message> decodeBody(Kind k, std::span<const std::uint8_t> body);
