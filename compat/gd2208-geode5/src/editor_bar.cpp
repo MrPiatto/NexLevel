@@ -39,8 +39,9 @@ void openMenu(NexMenu::Tab tab) {
 
 class EditorBar : public CCNode {
 public:
-    static EditorBar* create() {
+    static EditorBar* create(EditorUI* ui) {
         auto* ret = new EditorBar();
+        ret->m_tabY = tabYFor(ui);
         if (ret->init()) {
             ret->autorelease();
             return ret;
@@ -55,7 +56,7 @@ public:
 
         // Drop-down strip (built when opened), starts above the screen.
         m_panel = CCNode::create();
-        m_panel->setPosition({win.width / 2.f, win.height + kPanelH});
+        m_panel->setPosition({win.width / 2.f, m_tabY});
         m_panel->setVisible(false);
         this->addChild(m_panel, 0);
 
@@ -66,7 +67,7 @@ public:
         m_face->setContentSize({kTabW, kTabH});
         auto* item = CCMenuItemSpriteExtra::create(m_face, this, menu_selector(EditorBar::onTab));
         item->m_scaleMultiplier = 1.04f;
-        item->setPosition({win.width / 2.f, win.height - kTabH / 2.f});
+        item->setPosition({win.width / 2.f, m_tabY});
         m_tabMenu->addChild(item);
         drawTab();
         return true;
@@ -89,6 +90,19 @@ public:
 
 private:
     CCMenu* m_tabMenu = nullptr;
+    float m_tabY = 0.f;
+
+    // Just under GD's level position slider (top centre), so the slider stays free.
+    static float tabYFor(EditorUI* ui) {
+        const auto win = CCDirector::sharedDirector()->getWinSize();
+        float y = win.height - kTabH / 2.f - 26.f;
+        if (ui && ui->m_positionSlider && ui->m_positionSlider->getParent()) {
+            auto* slider = ui->m_positionSlider;
+            const auto p = ui->convertToNodeSpace(slider->getParent()->convertToWorldSpace(slider->getPosition()));
+            if (p.y > win.height * .6f && p.y <= win.height) y = p.y - 14.f - kTabH / 2.f;
+        }
+        return y;
+    }
     CCNode* m_face = nullptr;  // the tab's picture (redrawn), inside a button that is never replaced
     bool m_panelInSession = false;
     CCNode* m_panel = nullptr;
@@ -114,9 +128,9 @@ private:
         m_face->removeAllChildren();  // pictures only, no buttons in here
         auto* sm = SessionManager::get();
         auto* tab = m_face;
-        // Slanted like the logo, hanging from the top edge (its top is off screen).
-        auto* bg = kit::buttonBackground({kTabW, kTabH + 8.f}, kit::Style::Secondary);
-        bg->setPosition({kTabW / 2.f, (kTabH + 8.f) / 2.f});
+        // Slanted like the logo.
+        auto* bg = kit::buttonBackground({kTabW, kTabH}, kit::Style::Secondary);
+        bg->setPosition({kTabW / 2.f, kTabH / 2.f});
         tab->addChild(bg);
         auto* marks = CCDrawNode::create();
         // In a room: green dot; not: grey.
@@ -186,7 +200,8 @@ private:
         buildPanel();
         m_panel->setVisible(true);
         m_panel->stopAllActions();
-        m_panel->runAction(CCEaseOut::create(CCMoveTo::create(.16f, {win.width / 2.f, win.height - kTabH - kPanelH / 2.f - 3.f}), 2.f));
+        m_panel->setPosition({win.width / 2.f, m_tabY});
+        m_panel->runAction(CCEaseOut::create(CCMoveTo::create(.16f, {win.width / 2.f, m_tabY - kTabH / 2.f - kPanelH / 2.f - 3.f}), 2.f));
         m_sig.clear();
     }
 
@@ -194,7 +209,7 @@ private:
         const auto win = CCDirector::sharedDirector()->getWinSize();
         m_open = false;
         m_panel->stopAllActions();
-        const CCPoint hidden{win.width / 2.f, win.height + kPanelH};
+        const CCPoint hidden{win.width / 2.f, m_tabY};  // folds back behind the tab
         if (animate) {
             m_panel->runAction(CCSequence::create(CCEaseIn::create(CCMoveTo::create(.14f, hidden), 2.f), CCHide::create(), nullptr));
         } else {
@@ -232,7 +247,7 @@ void updateEditorBar(EditorUI* ui, bool playtesting) {
     if (!ui) return;
     auto* bar = typeinfo_cast<EditorBar*>(ui->getChildByID("editor-bar"_spr));
     if (!bar) {
-        bar = EditorBar::create();
+        bar = EditorBar::create(ui);
         if (!bar) return;
         bar->setID("editor-bar"_spr);
         ui->addChild(bar, 1002);

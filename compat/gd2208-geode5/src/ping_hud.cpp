@@ -30,7 +30,7 @@ void updatePingHud(CCNode* editorUI) {
         hud->setScale(.3f);
         hud->setAnchorPoint({.5f, 1.f});
         const auto win = CCDirector::sharedDirector()->getWinSize();
-        hud->setPosition({win.width / 2.f, win.height - 34.f});
+        hud->setPosition({win.width / 2.f, win.height - 62.f});  // under the NexLevel tab
         editorUI->addChild(hud, 1000);
     }
     hud->setVisible(true);
