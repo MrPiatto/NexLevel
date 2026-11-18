@@ -281,6 +281,7 @@ private:
 };
 
 void notify(const std::string& text, geode::NotificationIcon icon = geode::NotificationIcon::Info);
+bool editorInUse();  // editor_tracker.cpp
 // GD is closing normally: forget the "in a room" marker used to detect unexpected closes.
 void clearSessionMarker();
 

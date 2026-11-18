@@ -84,6 +84,9 @@ void SessionManager::autosaveTick() {
     if (!m_roomDirty || !inSession()) return;
     const auto interval = g_lastSaveBytes > kBigLevelBytes ? std::chrono::duration_cast<std::chrono::seconds>(kIntervalBig) : kInterval;
     if (std::chrono::steady_clock::now() - m_lastSave < interval) return;
+    // Saving a big level takes a moment: never in the middle of a drag or Shift-building
+    // (it would stutter right under the player's hand); it happens as soon as they let go.
+    if (editorInUse()) return;
     saveNow(true, "autosave");
 }
 

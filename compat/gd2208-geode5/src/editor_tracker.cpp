@@ -816,6 +816,11 @@ EditorTracker* g_tracker = nullptr;
 
 } // namespace
 
+namespace nexlevel::mod {
+// The local player is in the middle of an edit (touch/click held, swipe, Shift building).
+bool editorInUse() { return editorBusy(EditorUI::get()); }
+} // namespace nexlevel::mod
+
 class $modify(NLEditorUI, EditorUI) {
     struct Fields {
         std::unique_ptr<EditorTracker> tracker;
