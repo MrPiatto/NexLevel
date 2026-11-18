@@ -269,6 +269,13 @@ CCMenuItemSpriteExtra* button(const std::string& caption, CCSize size, Style sty
     }
     auto* label = text(caption, fontSize, textColor, 1);
     CCSprite* ic = iconName ? icon(iconName, fontSize * 1.3f, textColor) : nullptr;
+    if (ic && caption.empty()) {  // icon-only button: icon exactly in the middle
+        ic->setPosition({size.width / 2.f, size.height / 2.f});
+        bg->addChild(ic);
+        auto* item = CCMenuItemSpriteExtra::create(bg, target, sel);
+        item->m_scaleMultiplier = 1.06f;
+        return item;
+    }
     const float iconW = ic ? fontSize * 1.3f + 4.f : 0.f;
     const float maxW = size.width - 8.f - iconW;
     if (label->getContentSize().width > maxW) label->setScale(maxW / label->getContentSize().width);
