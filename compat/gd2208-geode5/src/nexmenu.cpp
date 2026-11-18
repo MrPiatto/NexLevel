@@ -134,8 +134,15 @@ void NexMenu::buildTab() {
     m_structure = structure();
 
     // ---- header ----
-    addText("NEXLEVEL", 17.f, 22.f, H - 24.f, kit::kText, 1);
-    addText("Create Together. Build Beyond.  -  Forg3 Studios", 7.f, 23.f, H - 41.f, kit::kMuted);
+    // The NexLevel logo (resources/wordmark.png); plain text if it can't be loaded.
+    if (auto* logo = CCSprite::create((std::string(GEODE_MOD_ID) + "/wordmark.png").c_str()); logo && logo->getContentSize().height > 0.f) {
+        logo->setScale(34.f / logo->getContentSize().height);
+        logo->setAnchorPoint({0.f, .5f});
+        add(logo, 18.f, H - 30.f);
+    } else {
+        addText("NEXLEVEL", 17.f, 22.f, H - 24.f, kit::kText, 1);
+        addText("Create Together. Build Beyond.  -  Forg3 Studios", 7.f, 23.f, H - 41.f, kit::kMuted);
+    }
     m_statusDot = add(CCDrawNode::create(), W - 128.f, H - 25.f);
     m_status = addText("", 8.f, W - 120.f, H - 25.f, kit::kMuted, 1);
     addButton(kit::button("", {22.f, 22.f}, kit::Style::Ghost, this, menu_selector(NexMenu::onClose2), 9.f, "close"), W - 24.f, H - 24.f);
