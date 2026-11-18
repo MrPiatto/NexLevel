@@ -3,11 +3,12 @@
 # Fetched dependencies
 /deps/geode-sdk/
 /deps/.cpm-cache/
-# Local reports
-/tools/env-report.txt
 # IDE
 .vs/
 .vscode/
 .idea/
 *.user
 /compat/*/build/
+# UI texture generator output (tools/ui/gen_ui.py)
+/tools/ui/out/
+/tools/ui/svg/

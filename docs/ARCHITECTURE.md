@@ -20,10 +20,9 @@ and the level stays identical for all players.
 |---|---|
 | `core/` | The engine: networking, sync, encryption, relay. **It knows nothing about Geometry Dash**: plain C++20, built and tested on its own. |
 | `compat/gd2208-geode5/` | The actual mod for GD 2.2081 / Geode v5: editor hooks, UI, saving. Uses the core. |
-| `compat/gd2209-geode6/` | Placeholder for the future GD 2.209 port. |
-| `deploy/relay/` | Scripts to install the relay server on a VPS (Docker, systemd service). |
+| `deploy/relay/` | Scripts to install the relay server on a VPS (systemd service). |
 | `tools/` | PowerShell scripts: build, tests, test bot, relay upload. |
-| `docs/` | Guides (online play, relay, test plan, this file). |
+| `docs/` | Guides (setup, online play, relay, this file). |
 
 **Why the core is separate:** it can be tested without opening the game (358 automated checks), and
 when a new GD version comes out only the `compat/` part has to be rewritten.

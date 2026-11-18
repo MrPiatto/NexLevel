@@ -145,7 +145,7 @@ constexpr Skin kPillSkin{nullptr, 16.f, 4.f, 72.f, 40.f};
 std::string spriteName(const char* file) { return std::string(GEODE_MOD_ID) + "/" + file; }
 
 // Background node (anchor centre) of `size` from a skin; nullptr if the texture is missing.
-CCNode* skinned(const Skin& skin, const char* file, CCSize size, float radius) {
+NineSlice* skinned(const Skin& skin, const char* file, CCSize size, float radius) {
     if (!file || size.width < 2.f || size.height < 2.f) return nullptr;
     const float inset = std::min(skin.margin + skin.r0 + 1.f, std::min(skin.w, skin.h) / 2.f - 1.f);
     float k = std::clamp(radius / skin.r0, .2f, 3.f);

@@ -59,7 +59,6 @@ pill('btn_primary', '#7b3cff', '#c43cff')
 pill('btn_secondary', '#262b55', '#1d2146', alpha=.95, border='#9a6bff', borderA=.6, gloss=True)
 pill('btn_danger', '#ff4468', '#b8309a')
 pill('btn_ghost', '#000000', '#000000', alpha=0, border='#aab0d8', borderA=.45, gloss=False, shadow=False)
-pill('btn_good', '#16c79a', '#0f9d8c')
 
 # ---- buttons: slanted like the NexLevel logo (replaces the round pills above) ----
 # Option A: slanted like the logo (parallelogram), 72x40 texture, shape 64x32, skew 7

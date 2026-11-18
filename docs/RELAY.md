@@ -29,8 +29,8 @@ Manual way:
 Any always-on machine with a public IP address works, such as a small Linux VPS. Open TCP port
 **47800**.
 
-- Docker: see `deploy/relay/Dockerfile`.
-- Without Docker: see `deploy/relay/nexlevel-relay.service`.
+- Install with `deploy/relay/install.sh` (systemd service `deploy/relay/nexlevel-relay.service`), or from
+  Windows with `tools\relay-upload.ps1`.
 
 Then set the **Relay server** setting of the mod to the server's address, for example
 `relay.example.com` or `203.0.113.10:47800`. Everyone in a room must use the same relay. A

@@ -97,8 +97,8 @@ tools\test-core.ps1                 # core tests
 tools\build.ps1 -Target gd2208      # builds the mod -> build/out/gd2208/forg3studios.nexlevel.geode
 ```
 
-See [`docs/SETUP.md`](docs/SETUP.md) for the full setup, [`docs/RELAY.md`](docs/RELAY.md) to run your own
-relay and [`docs/V1-TESTPLAN.md`](docs/V1-TESTPLAN.md) for the test plan.
+See [`docs/SETUP.md`](docs/SETUP.md) for the full setup and [`docs/RELAY.md`](docs/RELAY.md) to run your own
+relay.
 
 ### How it fits together
 
@@ -111,9 +111,9 @@ isn't possible, traffic goes through a relay that only sees encrypted data.
 | `core/` | Game-independent C++20 core: protocol, sync, sessions, encryption, relay. Fully unit-tested. |
 | `compat/gd2208-geode5/` | The Geode mod for GD 2.2081: editor hooks, UI, settings. |
 | `shared-geode/` | Geode code shared between game versions. |
-| `deploy/relay/` | Relay server: Dockerfile, systemd service, install script. |
+| `deploy/relay/` | Relay server: systemd service and install script. |
 | `tools/` | Build, test and deploy scripts. |
-| `docs/` | Setup, online/relay guides, test plan. |
+| `docs/` | Setup, architecture, online and relay guides. |
 
 ## 💬 Feedback
 
