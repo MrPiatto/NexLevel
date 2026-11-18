@@ -695,7 +695,7 @@ void NexMenu::onTogglePublic(CCObject*) {
            : next == V::Private ? "Private room - listed, players ask you to join"
                                 : "Hidden room - only people with the code can join",
            NotificationIcon::Info);
-    buildTab();
+    m_structure.clear();  // rebuilt by the next refresh (not inside this button's own click)
 }
 
 void NexMenu::onToggleLock(CCObject* sender) {

@@ -19,7 +19,18 @@ namespace {
 constexpr float kTabW = 96.f, kTabH = 15.f;
 constexpr float kPanelW = 330.f, kPanelH = 34.f;
 
+// True if any popup (NexLevel's or GD's) is open over the editor.
+bool popupOpen() {
+    auto* scene = CCDirector::sharedDirector()->getRunningScene();
+    if (!scene) return true;
+    for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
+        if (typeinfo_cast<FLAlertLayer*>(child)) return true;
+    }
+    return false;
+}
+
 void openMenu(NexMenu::Tab tab) {
+    if (popupOpen()) return;
     if (auto* menu = NexMenu::create(true)) {
         menu->show();
         menu->openTab(tab);
@@ -51,7 +62,13 @@ public:
         m_tabMenu = CCMenu::create();
         m_tabMenu->setPosition({0.f, 0.f});
         this->addChild(m_tabMenu, 1);
-        buildTab();
+        m_face = CCNode::create();
+        m_face->setContentSize({kTabW, kTabH});
+        auto* item = CCMenuItemSpriteExtra::create(m_face, this, menu_selector(EditorBar::onTab));
+        item->m_scaleMultiplier = 1.04f;
+        item->setPosition({win.width / 2.f, win.height - kTabH / 2.f});
+        m_tabMenu->addChild(item);
+        drawTab();
         return true;
     }
 
@@ -60,17 +77,20 @@ public:
         if (playtesting && m_open) close(false);
         auto* sm = SessionManager::get();
         const std::string sig = std::to_string(static_cast<int>(sm->role())) + "|" + std::to_string(sm->chatUnread()) + "|" +
-                                std::to_string(sm->playerCount()) + "|" + (m_open ? "o" : "c");
+                                (m_open ? "o" : "c");
         if (sig != m_sig) {
             m_sig = sig;
-            buildTab();
-            if (m_open) buildPanel();
+            drawTab();  // picture only: the button itself stays
         }
+        // Joined / left a room while the strip is open: close it (its buttons are rebuilt on the next open).
+        if (m_open && sm->inSession() != m_panelInSession) close(true);
         if (m_open && m_statusLabel) kit::setTextIfChanged(m_statusLabel, statusText());
     }
 
 private:
     CCMenu* m_tabMenu = nullptr;
+    CCNode* m_face = nullptr;  // the tab's picture (redrawn), inside a button that is never replaced
+    bool m_panelInSession = false;
     CCNode* m_panel = nullptr;
     CCLabelTTF* m_statusLabel = nullptr;
     bool m_open = false;
@@ -90,12 +110,10 @@ private:
         return s;
     }
 
-    void buildTab() {
-        m_tabMenu->removeAllChildren();
+    void drawTab() {
+        m_face->removeAllChildren();  // pictures only, no buttons in here
         auto* sm = SessionManager::get();
-        const auto win = CCDirector::sharedDirector()->getWinSize();
-        auto* tab = CCNode::create();
-        tab->setContentSize({kTabW, kTabH});
+        auto* tab = m_face;
         // Hangs from the top edge: rounded at the bottom (the top is off screen).
         auto* bg = kit::card({kTabW, kTabH + 8.f}, 7.f, kit::rgba(16, 14, 34, .92f), kit::rgba(kit::kViolet, 1.f), .9f);
         bg->setPosition({kTabW / 2.f, (kTabH + 8.f) / 2.f});
@@ -114,10 +132,6 @@ private:
             n->setPosition({kTabW - 9.f, kTabH / 2.f});
             tab->addChild(n);
         }
-        auto* item = CCMenuItemSpriteExtra::create(tab, this, menu_selector(EditorBar::onTab));
-        item->m_scaleMultiplier = 1.04f;
-        item->setPosition({win.width / 2.f, win.height - kTabH / 2.f});
-        m_tabMenu->addChild(item);
     }
 
     void addPanelButton(CCMenu* menu, const std::string& caption, kit::Style style, SEL_MenuHandler sel, float x, int tag = 0) {
@@ -127,9 +141,11 @@ private:
         menu->addChild(b);
     }
 
+    // Only called from open(), i.e. from the tab's own button (never while a strip button is pressed).
     void buildPanel() {
         m_panel->removeAllChildren();
         auto* sm = SessionManager::get();
+        m_panelInSession = sm->inSession();
         auto* card = kit::card({kPanelW, kPanelH}, 9.f, kit::rgba(16, 14, 34, .95f), kit::rgba(kit::kViolet, 1.f), .9f);
         m_panel->addChild(card);
         m_statusLabel = kit::text(statusText(), 7.f, sm->inSession() ? kit::kText : kit::kMuted, 1);
@@ -146,11 +162,9 @@ private:
             addPanelButton(menu, "Host", kit::Style::Primary, menu_selector(EditorBar::onMenu), right);
             return;
         }
-        const auto unread = sm->chatUnread();
         addPanelButton(menu, "Look here", kit::Style::Secondary, menu_selector(EditorBar::onLookHere), right - 174.f);
         addPanelButton(menu, "Players", kit::Style::Secondary, menu_selector(EditorBar::onPlayers), right - 116.f);
-        addPanelButton(menu, unread ? "Chat (" + std::to_string(unread) + ")" : std::string("Chat"),
-                       unread ? kit::Style::Primary : kit::Style::Secondary, menu_selector(EditorBar::onChat), right - 58.f);
+        addPanelButton(menu, "Chat", kit::Style::Secondary, menu_selector(EditorBar::onChat), right - 58.f);
         addPanelButton(menu, "Menu", kit::Style::Primary, menu_selector(EditorBar::onMenu), right);
     }
 
