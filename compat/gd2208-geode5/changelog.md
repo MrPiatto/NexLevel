@@ -1,4 +1,10 @@
 # v1.0.7
+- **History tab:** who placed, deleted and edited what, with the time, a line every few seconds.
+- **Restore points (host):** a copy of the room every 5 minutes, kept in NexLevel's own folder (not in My Levels). In the History tab, "Open" turns one into a new level in My Levels.
+- **Bans are kept:** banned players stay banned in all your rooms. "Bans" in the Players tab lists them, with Unban.
+- **Chat:** write @Name to mention someone (they get a notification even with the chat open); /mute Name hides someone's messages just for you (/unmute Name to undo).
+- **End of session summary:** time spent, how many objects you placed and the top builder.
+- **Room list:** rooms of another NexLevel version are greyed out instead of failing when you join.
 - **Loading screen when joining:** a black screen with the NexLevel logo slides in while you connect and the level loads, then slides away once the room is open (at least 5 seconds).
 - **NexLevel bar:** a small tab at the top of the editor drops down the room status and quick buttons (Look here, Players, Chat, Menu). It replaces the button in the Esc menu.
 - **Chat key:** press **T** in the editor to open the room chat (setting "Chat key"). Unread messages show on the bar.

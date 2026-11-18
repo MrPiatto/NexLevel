@@ -70,6 +70,7 @@ void SessionManager::saveNow(bool toDisk, const char* reason) {
     }
     if (str.size() <= 1) return;  // nothing to save (never overwrite a level with an empty one)
     target->m_levelString = ZipUtils::compressString(str, false, 0);
+    snapshotIfDue(std::string(target->m_levelString));  // restore point every few minutes
     target->m_isVerified = 0;  // content changed: has to be verified again before uploading
     target->m_isVerifiedRaw = false;
     if (toDisk) LocalLevelManager::sharedState()->save();

@@ -8,6 +8,7 @@
 #include <Geode/utils/web.hpp>
 
 #include <nexlevel/core/relay/protocol.hpp>
+#include <nexlevel/core/version.hpp>
 #include <nexlevel/core/sync/level_settings.hpp>
 #include <algorithm>
 #include <map>
@@ -41,6 +42,7 @@ void setMarker(bool on) {
 } // namespace
 
 void SessionManager::sendChat(const std::string& text) {
+    if (chatCommand(text)) return;  // "/mute Name" etc. stay on this computer
     if (m_host) m_host->sendChat(text);
     else if (m_client) m_client->sendChat(text);
 }
@@ -93,6 +95,7 @@ void SessionManager::applyHostSettings() {
     if (!m_host) return;
     m_host->setMaxPlayers(static_cast<std::size_t>(maxPlayers()));
     m_host->setSettingsLocked(Mod::get()->getSavedValue<bool>("room-settings-locked", false));
+    m_host->setBans(savedBans());
     // Older versions saved a public on/off switch; the default is now a private listed room.
     const auto legacyPublic = Mod::get()->getSavedValue<bool>("room-public", false);
     const auto saved = Mod::get()->getSavedValue<int64_t>("room-visibility", legacyPublic ? 2 : 1);
@@ -123,7 +126,11 @@ int SessionManager::maxPlayers() const {
     return static_cast<int>(std::clamp<int64_t>(Mod::get()->getSavedValue<int64_t>("room-max-players", 16), 1, 16));
 }
 
-bool SessionManager::ban(sync::PeerId peer) { return m_host && m_host->ban(peer); }
+bool SessionManager::ban(sync::PeerId peer) {
+    if (!m_host || !m_host->ban(peer)) return false;
+    persistBans(m_host->bans());
+    return true;
+}
 
 std::size_t SessionManager::undoPlayer(sync::PeerId peer) {
     if (!m_host) return 0;
@@ -188,6 +195,7 @@ void SessionManager::refreshPublicRooms() {
                 e.players = pr.players;
                 e.maxPlayers = pr.maxPlayers;
                 e.privateRoom = pr.privateRoom;
+                e.protocol = pr.protocol;
                 found.push_back(std::move(e));
             }
         }
@@ -301,11 +309,13 @@ void SessionManager::featuresTick() {
         const auto others = static_cast<std::uint8_t>(std::min<std::size_t>(playerCount(), 255));
         m_host->setPublicListing(relay::encodeListing(true, static_cast<std::uint8_t>(others + 1),
                                                       static_cast<std::uint8_t>(maxPlayers() + 1), m_host->roomKey(),
-                                                      displayName(), level, m_visibility == Visibility::Private));
+                                                      displayName(), level, m_visibility == Visibility::Private,
+                                                      static_cast<std::uint8_t>(kProtocolVersion)));
     }
     joinRequestsTick();
 
     alertsTick();
+    extrasTick();
 
     // Chat.
     std::vector<session::ChatMessage> lines;
@@ -314,10 +324,14 @@ void SessionManager::featuresTick() {
     const auto self = selfId();
     for (auto& l : lines) {
         ChatLine line{l.peer, peerName(l.peer), l.text};
-        if (!m_chatOpen && (!self || l.peer != *self)) {
-            ++m_chatUnread;
+        const bool fromMe = self && l.peer == *self;
+        if (!fromMe && isMuted(line.name)) continue;  // muted with /mute: not shown at all
+        if (!fromMe && mentionsMe(line.text)) {
+            toast(line.name + " mentioned you", line.text, ToastKind::Warning);  // even with the chat open
+        } else if (!m_chatOpen && !fromMe) {
             toast(line.name, line.text, ToastKind::Chat);
         }
+        if (!m_chatOpen && !fromMe) ++m_chatUnread;
         m_chatLog.push_back(std::move(line));
         ++m_chatTotal;
         while (m_chatLog.size() > kChatKeep) m_chatLog.pop_front();

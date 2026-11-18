@@ -18,7 +18,7 @@ namespace nexlevel::mod {
 
 class NexMenu : public geode::Popup {
 public:
-    enum class Tab { Room, Players, Chat, Network, Settings };
+    enum class Tab { Room, Players, Chat, History, Network, Settings };
     // fromEditor = false: opened from the main menu. Hosting/joining needs the level's editor, so the
     // Room tab explains that instead of showing Host/Join (an open room is still shown and managed).
     static NexMenu* create(bool fromEditor = true);
@@ -53,6 +53,10 @@ protected:
     void buildNetwork();
     void buildSettings();
     void buildChat();
+    void buildHistory();
+    void onBans(cocos2d::CCObject*);
+    void onOpenRestore(cocos2d::CCObject* sender);
+    std::vector<SessionManager::RestorePoint> m_restorePoints;  // behind the History tab's Open buttons
     void onExit() override;
 
     void onTab(cocos2d::CCObject* sender);

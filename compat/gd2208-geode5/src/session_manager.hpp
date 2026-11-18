@@ -12,6 +12,8 @@
 
 #include <chrono>
 #include <deque>
+#include <filesystem>
+#include <set>
 #include <map>
 #include <memory>
 #include <optional>
@@ -139,6 +141,30 @@ public:
     void setMaxPlayers(int n);
     int maxPlayers() const;
     bool ban(sync::PeerId peer);
+    // Bans are kept between rooms (saved), and can be undone.
+    using BanEntry = session::SessionHost::BanEntry;
+    std::vector<BanEntry> savedBans() const;
+    void unban(const BanEntry& entry);
+
+    // History: who placed / deleted / edited what, a line every few seconds per player (extras.cpp).
+    struct HistoryLine {
+        std::string time;
+        sync::PeerId peer = 0;
+        std::string name;
+        std::string text;
+    };
+    const std::deque<HistoryLine>& history() const { return m_history; }
+    std::size_t historyCount() const { return m_historyTotal; }
+    // Chat: "/mute Name", "/unmute Name" (local only) and "@Name" mentions.
+    bool isMuted(const std::string& name) const;
+    // Host restore points: a copy of the room every 5 minutes in the mod's folder (newest first).
+    struct RestorePoint {
+        std::filesystem::path file;
+        std::string label;
+        long long time = 0;
+    };
+    std::vector<RestorePoint> restorePoints() const;
+    bool openRestorePoint(const RestorePoint& point, std::string* name);  // as a new level in My Levels
     // Host: remove every object this player placed (still in the level). Returns how many.
     std::size_t undoPlayer(sync::PeerId peer);
 
@@ -164,6 +190,7 @@ public:
         std::string host, level;
         int players = 0, maxPlayers = 0;
         bool privateRoom = false;
+        int protocol = 0;  // 0 = older NexLevel
     };
     void refreshPublicRooms();
     const std::vector<PublicRoomEntry>& publicRooms() const { return m_publicRooms; }
@@ -193,6 +220,18 @@ private:
     std::chrono::steady_clock::time_point m_lastErase{};
     std::chrono::steady_clock::time_point m_lastSettingsAlert{};
     void alertsTick();
+    void extrasTick();
+    void sessionSummary();
+    void snapshotIfDue(const std::string& compressedLevel);
+    void persistBans(const std::vector<BanEntry>& list);
+    bool chatCommand(const std::string& text);
+    bool mentionsMe(const std::string& text) const;
+    std::deque<HistoryLine> m_history;
+    std::size_t m_historyTotal = 0;
+    std::chrono::steady_clock::time_point m_lastHistory{};
+    std::chrono::steady_clock::time_point m_lastSnapshot{};
+    std::map<sync::PeerId, std::size_t> m_sessionPlaced;
+    std::set<std::string> m_muted;
     Visibility m_visibility = Visibility::Private;
     // Join requests for this host's private room, shown one at a time.
     std::deque<session::SessionHost::JoinRequest> m_joinQueue;

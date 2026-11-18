@@ -4,6 +4,8 @@
 #include "presence_overlay.hpp"
 #include "session_manager.hpp"
 #include "ui_common.hpp"
+#include "ban_list.hpp"
+#include "toast.hpp"
 
 #include <Geode/modify/EditorPauseLayer.hpp>
 #include <Geode/modify/MenuLayer.hpp>
@@ -100,6 +102,7 @@ std::string NexMenu::structure() const {
                     (sm->roomCode() ? "c" : "-") + "|" + (m_showIp ? "i" : "-");
     for (auto& p : sm->peers()) s += "|" + std::to_string(p.id) + p.name + (p.viewOnly ? "v" : "");
     if (m_tab == Tab::Chat) s += "|chat" + std::to_string(sm->chatCount());
+    if (m_tab == Tab::History) s += "|h" + std::to_string(sm->historyCount());
     if (m_tab == Tab::Players) s += "|" + std::to_string(sm->presences().size()) + "|f" + std::to_string(sm->following().value_or(0));
     if (!m_fromEditor) s += "|pr" + std::to_string(sm->publicRooms().size()) + (sm->publicRoomsLoading() ? "l" : "");
     return s;
@@ -122,6 +125,7 @@ void NexMenu::buildTab() {
     m_codeInput = m_relayInput = m_chatInput = nullptr;
     m_communityText = nullptr;
     m_shownRooms.clear();
+    m_restorePoints.clear();
     m_codeText = m_onlineText = m_statPlayers = m_statObjects = m_statUptime = nullptr;
     m_pingRows.clear();
     m_gauge = nullptr;
@@ -137,10 +141,11 @@ void NexMenu::buildTab() {
     addButton(kit::button("X", {20.f, 20.f}, kit::Style::Ghost, this, menu_selector(NexMenu::onClose2), 9.f), W - 24.f, H - 24.f);
 
     // ---- tab bar ----
-    const char* names[] = {"Room", "Players", "Chat", "Network", "Settings"};
-    const float tabW = 84.f, barW = tabW * 5.f + 8.f;
+    const char* names[] = {"Room", "Players", "Chat", "History", "Network", "Settings"};
+    constexpr int kTabs = 6;
+    const float tabW = 72.f, barW = tabW * kTabs + 8.f;
     add(kit::card({barW, 26.f}, 13.f, kit::rgba(30, 34, 64, .9f), kit::rgba(kit::kViolet, .25f), .6f), W / 2.f, H - 64.f);
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < kTabs; ++i) {
         const bool sel = static_cast<int>(m_tab) == i;
         auto* b = kit::button(names[i], {tabW - 4.f, 20.f}, sel ? kit::Style::Primary : kit::Style::Ghost, this,
                               menu_selector(NexMenu::onTab), 8.5f);
@@ -159,6 +164,7 @@ void NexMenu::buildTab() {
         case Tab::Room: buildRoom(); break;
         case Tab::Players: buildPlayers(); break;
         case Tab::Chat: buildChat(); break;
+        case Tab::History: buildHistory(); break;
         case Tab::Network: buildNetwork(); break;
         case Tab::Settings: buildSettings(); break;
     }
@@ -207,12 +213,20 @@ void NexMenu::buildRoom() {
                     add(chip, 150.f, ry + 4.f);
                 }
                 const bool full = r.players >= r.maxPlayers;
-                const char* caption = full ? "Full" : r.privateRoom ? "Ask" : "Join";
-                auto* j = kit::button(caption, {40.f, 17.f}, full ? kit::Style::Secondary : r.privateRoom ? kit::Style::Secondary : kit::Style::Primary,
-                                      this, menu_selector(NexMenu::onJoinPublic), 7.f);
+                // Rooms of another NexLevel version can't be joined: shown greyed out.
+                const bool otherVersion = r.protocol != static_cast<int>(kProtocolVersion);
+                if (otherVersion) {
+                    t->setOpacity(110);
+                    auto* chip = kit::chip(r.protocol > static_cast<int>(kProtocolVersion) ? "Newer version" : "Older version", kit::kMuted, 5.5f);
+                    add(chip, 150.f, ry - 6.f);
+                }
+                const char* caption = otherVersion ? "-" : full ? "Full" : r.privateRoom ? "Ask" : "Join";
+                auto* j = kit::button(caption, {40.f, 17.f},
+                                      (full || otherVersion || r.privateRoom) ? kit::Style::Secondary : kit::Style::Primary, this,
+                                      menu_selector(NexMenu::onJoinPublic), 7.f);
                 j->setTag(static_cast<int>(m_shownRooms.size()));
                 m_shownRooms.push_back(r);
-                j->setEnabled(!full);
+                j->setEnabled(!full && !otherVersion);
                 addButton(j, 190.f, ry);
             }
         }
@@ -293,6 +307,11 @@ void NexMenu::buildPlayers() {
               W - 60.f, kContentTop - 6.f);
     const auto self = sm->selfId();
     const bool host = sm->role() == Role::Host;
+    if (host) {
+        addButton(kit::button("Bans (" + std::to_string(sm->savedBans().size()) + ")", {60.f, 15.f}, kit::Style::Ghost, this,
+                              menu_selector(NexMenu::onBans), 6.5f),
+                  W - 134.f, kContentTop - 6.f);
+    }
     const std::size_t maxRows = 6;
     std::map<sync::PeerId, std::size_t> placed;  // objects in the level per player (credits)
     if (const auto* room = sm->view()) {
@@ -625,12 +644,79 @@ void NexMenu::buildChat() {
         y -= 16.f;
     }
     add(kit::card({340.f, 24.f}, 8.f, kit::rgba(12, 14, 30, 1.f), kit::rgba(kit::kTeal, .45f), .7f), 16.f + 170.f, 26.f);
-    m_chatInput = TextInput::create(330.f, "Message...", "chatFont.fnt");
+    m_chatInput = TextInput::create(330.f, "Message...  (@Name to mention, /mute Name)", "chatFont.fnt");
     m_chatInput->hideBG();
     m_chatInput->setCommonFilter(CommonFilter::Any);
     m_chatInput->setMaxCharCount(static_cast<int>(session::kMaxChatLen));
     add(m_chatInput, 16.f + 170.f, 26.f);
     addButton(kit::button("Send", {72.f, 24.f}, kit::Style::Primary, this, menu_selector(NexMenu::onSendChat), 9.f), 404.f, 26.f);
+}
+
+// ---------------------------------------------------------------- History
+void NexMenu::buildHistory() {
+    auto* sm = SessionManager::get();
+    if (!sm->inSession()) {
+        addText("No room yet", 12.f, W / 2.f, 140.f, kit::kText, 1, {.5f, .5f});
+        addText("Who placed, deleted and edited what shows up here.", 8.f, W / 2.f, 122.f, kit::kMuted, 0, {.5f, .5f});
+        return;
+    }
+    const bool host = sm->role() == Role::Host;
+    const float listW = host ? 290.f : 428.f;
+    const float listX = 16.f + listW / 2.f;
+    add(kit::card({listW, 176.f}, 10.f, kit::rgba(30, 34, 66, .85f), kit::rgba(kit::kViolet, .3f), .8f), listX, kContentTop - 92.f);
+    addText("HISTORY", 7.f, 26.f, kContentTop - 12.f, kit::kMuted, 1);
+    const auto& log = sm->history();
+    if (log.empty()) addText("Nothing changed yet", 8.f, listX, kContentTop - 92.f, kit::kMuted, 0, {.5f, .5f});
+    constexpr std::size_t kLines = 10;
+    const std::size_t first = log.size() > kLines ? log.size() - kLines : 0;
+    float y = kContentTop - 28.f;
+    for (std::size_t i = log.size(); i-- > first; y -= 15.f) {  // newest on top
+        const auto& line = log[i];
+        addText(line.time, 6.5f, 26.f, y, kit::kMuted);
+        auto* who = addText(line.name, 7.f, 56.f, y, ui::peerColor(line.peer), 1);
+        if (who->getContentSize().width > 80.f) who->setScale(80.f / who->getContentSize().width);
+        const float whoW = std::min(who->getContentSize().width * who->getScale(), 80.f);
+        auto* what = addText(line.text, 7.f, 56.f + whoW + 6.f, y, kit::kText);
+        const float room = listW - 60.f - whoW;
+        if (what->getContentSize().width > room) what->setScale(room / what->getContentSize().width);
+    }
+    if (!host) return;
+    // Restore points: copies of the room every 5 minutes; "Open" makes one a level in My Levels.
+    const float rx = 16.f + listW + 8.f + 65.f;
+    add(kit::card({130.f, 176.f}, 10.f, kit::rgba(30, 34, 66, .85f), kit::rgba(kit::kViolet, .3f), .8f), rx, kContentTop - 92.f);
+    addText("RESTORE POINTS", 7.f, rx, kContentTop - 12.f, kit::kMuted, 1, {.5f, .5f});
+    m_restorePoints = sm->restorePoints();
+    if (m_restorePoints.empty()) {
+        addText("Every 5 minutes", 7.f, rx, kContentTop - 86.f, kit::kMuted, 0, {.5f, .5f});
+        addText("while you host", 7.f, rx, kContentTop - 98.f, kit::kMuted, 0, {.5f, .5f});
+    }
+    float ry = kContentTop - 32.f;
+    for (std::size_t i = 0; i < m_restorePoints.size() && i < 7; ++i, ry -= 21.f) {
+        addText(m_restorePoints[i].label, 7.f, rx - 58.f, ry, kit::kText);
+        auto* b = kit::button("Open", {36.f, 15.f}, kit::Style::Secondary, this, menu_selector(NexMenu::onOpenRestore), 6.5f);
+        b->setTag(static_cast<int>(i));
+        addButton(b, rx + 40.f, ry);
+    }
+    addText("Restore points open as a new level in My Levels", 6.f, W / 2.f, 12.f, kit::kMuted, 0, {.5f, .5f});
+}
+
+void NexMenu::onBans(CCObject*) { showBanList(); }
+
+void NexMenu::onOpenRestore(CCObject* sender) {
+    const auto i = static_cast<std::size_t>(static_cast<CCNode*>(sender)->getTag());
+    if (i >= m_restorePoints.size()) return;
+    const auto point = m_restorePoints[i];
+    geode::createQuickPopup("Open restore point?",
+                            "The room as it was at <cy>" + point.label + "</c> becomes a <cg>new level</c> in My Levels. The room itself is not changed.",
+                            "Cancel", "Open", [point](FLAlertLayer*, bool open) {
+                                if (!open) return;
+                                std::string name;
+                                if (SessionManager::get()->openRestorePoint(point, &name)) {
+                                    toast("Restore point saved", "\"" + name + "\" is in My Levels", ToastKind::Success);
+                                } else {
+                                    toast("Could not open it", "The restore point file is missing or damaged", ToastKind::Error);
+                                }
+                            });
 }
 
 void NexMenu::onSendChat(CCObject*) {

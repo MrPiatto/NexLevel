@@ -213,6 +213,7 @@ void SessionManager::beforeEditorLoads(GJGameLevel* level) {
 
 void SessionManager::leave() {
     cancelJoinLoading();
+    sessionSummary();
     if (m_host || m_client) saveNow(true, "leaving the room");
     if (m_host) {
         ++m_roomGeneration;
@@ -532,6 +533,7 @@ const sync::Replica* SessionManager::view() const {
 
 void SessionManager::endClient(const std::string& message, NotificationIcon icon) {
     cancelJoinLoading();
+    sessionSummary();
     notify(message, icon);
     log::info("NexLevel: {}", message);
     saveNow(true, "room ended");  // the player's backup keeps everything built so far
