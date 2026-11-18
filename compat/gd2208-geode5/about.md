@@ -5,7 +5,7 @@
 Build Geometry Dash levels with your friends in real time, in the same editor.
 
 ## How to play
-- **Host:** open a level in the editor, press **Esc** > **NexLevel Collab** > **Host room** (this level or a safe copy). Copy the code and send it to your friends.
+- **Host:** open a level in the editor, open the **NexLevel** bar at the top of the editor > **Host** (this level or a safe copy). Copy the code and send it to your friends.
 - **Join:** tap the **NexLevel logo** at the top right of the main menu, paste the code and press **Join**. The room opens in a new level, your own levels are never touched.
 
 No IP addresses, no router settings.

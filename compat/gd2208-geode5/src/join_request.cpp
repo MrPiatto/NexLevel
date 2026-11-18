@@ -3,6 +3,8 @@
 
 #include "ui_kit.hpp"
 
+#include <utility>
+
 using namespace geode::prelude;
 
 namespace nexlevel::mod {
@@ -29,7 +31,7 @@ private:
     std::string m_name;
     std::function<void(bool)> m_answer;
 
-    bool init() {
+    bool init() override {
         if (!Popup::init(kW, kH, "square02b_001.png", {0, 0, 80, 80})) return false;
         m_bgSprite->setVisible(false);
         if (m_closeBtn) m_closeBtn->setVisible(false);

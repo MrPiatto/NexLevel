@@ -18,7 +18,7 @@ by **Forg3 Studios**
 
 </div>
 
-> **Status:** v1.0.6. If something doesn't work, please [open an issue](../../issues).
+> **Status:** v1.0.7. If something doesn't work, please [open an issue](../../issues).
 
 ---
 
@@ -62,14 +62,14 @@ and mobile data.
 
 **Host a room**
 1. Open your level in the editor.
-2. Press **Esc** → **NexLevel Collab** → **Host room**.
+2. Open the **NexLevel** bar at the top of the editor → **Host**.
 3. Choose **This level**, or **A copy** to keep your original untouched.
 4. Press **Copy** and send the code to your friends.
 
 **Join a room**
 - From the **main menu**: tap the **NexLevel logo** (top right), paste the code and press **Join**. The
   room opens in a new level, so your own levels are never touched.
-- Or from inside the editor: **Esc** → **NexLevel Collab** → paste the code → **Join**.
+- Or from inside the editor: the **NexLevel** bar → **Join** → paste the code.
 
 ## ❓ FAQ
 

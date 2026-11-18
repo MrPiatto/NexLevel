@@ -22,6 +22,8 @@ public:
     // fromEditor = false: opened from the main menu. Hosting/joining needs the level's editor, so the
     // Room tab explains that instead of showing Host/Join (an open room is still shown and managed).
     static NexMenu* create(bool fromEditor = true);
+    // Shows a tab (the chat tab also puts the cursor in the message box).
+    void openTab(Tab tab);
 
 protected:
     bool init() override;

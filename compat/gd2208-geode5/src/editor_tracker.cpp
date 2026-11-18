@@ -13,6 +13,7 @@
 
 #include <nexlevel/core/sync/object_props.hpp>
 
+#include "editor_bar.hpp"
 #include "level_settings_adapter.hpp"
 #include "nexmenu.hpp"
 #include "ping_hud.hpp"
@@ -863,6 +864,14 @@ class $modify(NLEditorUI, EditorUI) {
     void nlTick(float) {
         if (g_tracker) g_tracker->tick(this->getSelectedObjects(), m_selectedObject);
         nexlevel::mod::updatePingHud(this);
+        nexlevel::mod::updateEditorBar(this, m_editorLayer && m_editorLayer->m_playbackMode != PlaybackMode::Not);
+    }
+
+    // The chat key opens the room chat (only in a room, not while playtesting).
+    void keyDown(enumKeyCodes key, double timestamp) {
+        const bool playing = m_editorLayer && m_editorLayer->m_playbackMode != PlaybackMode::Not;
+        if (!playing && nexlevel::mod::editorBarKey(key)) return;
+        EditorUI::keyDown(key, timestamp);
     }
 
     void onDeleteSelected(CCObject* sender) {

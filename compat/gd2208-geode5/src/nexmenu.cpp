@@ -61,6 +61,12 @@ NexMenu* NexMenu::create(bool fromEditor) {
     return nullptr;
 }
 
+void NexMenu::openTab(Tab tab) {
+    m_tab = tab;
+    buildTab();
+    if (tab == Tab::Chat && m_chatInput) m_chatInput->focus();
+}
+
 CCLabelTTF* NexMenu::addText(const std::string& s, float size, float x, float y, ccColor3B c, int weight, CCPoint anchor) {
     auto* l = kit::text(s, size, c, weight);
     l->setAnchorPoint(anchor);
@@ -188,7 +194,7 @@ void NexMenu::buildRoom() {
                 addText(sm->publicRoomsLoading() ? "Looking for rooms..." : "No rooms right now", 8.f, 16.f + 103.f, 140.f,
                         kit::kMuted, 0, {.5f, .5f});
                 addText("Host from your level's editor:", 7.f, 16.f + 103.f, 112.f, kit::kMuted, 0, {.5f, .5f});
-                addText("Esc > NexLevel Collab > Host room", 7.f, 16.f + 103.f, 100.f, kit::kText, 0, {.5f, .5f});
+                addText("NexLevel bar at the top > Host room", 7.f, 16.f + 103.f, 100.f, kit::kText, 0, {.5f, .5f});
             }
             float ry = 158.f;
             for (std::size_t i = 0; i < rooms.size() && i < 4; ++i, ry -= 24.f) {
@@ -837,21 +843,9 @@ class $modify(NLMenuLayerButton, MenuLayer) {
     }
 };
 
-// "Collab" button in the editor pause menu (Esc).
+// Editor pause menu (Esc): players can't save the host's level. (NexLevel itself opens from the
+// bar at the top of the editor, see editor_bar.cpp.)
 class $modify(NLEditorPauseLayer, EditorPauseLayer) {
-    bool init(LevelEditorLayer* layer) {
-        if (!EditorPauseLayer::init(layer)) return false;
-        auto* btn = kit::button("NexLevel Collab", {120.f, 24.f}, kit::Style::Primary, this,
-                                menu_selector(NLEditorPauseLayer::onNexLevelCollab), 9.f);
-        auto* menu = CCMenu::create();
-        menu->addChild(btn);
-        menu->setID("nexlevel-collab-menu"_spr);
-        auto win = CCDirector::sharedDirector()->getWinSize();
-        menu->setPosition({win.width / 2.f, win.height - 28.f});
-        this->addChild(menu, 10);
-        return true;
-    }
-
     // Players in someone else's room can't save it: the room (and the level) stays the host's.
     void saveLevel() {
         auto* sm = nexlevel::mod::SessionManager::get();
@@ -861,9 +855,5 @@ class $modify(NLEditorPauseLayer, EditorPauseLayer) {
             return;
         }
         EditorPauseLayer::saveLevel();
-    }
-
-    void onNexLevelCollab(CCObject*) {
-        if (auto* menu = nexlevel::mod::NexMenu::create()) menu->show();
     }
 };
