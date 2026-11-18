@@ -1,5 +1,6 @@
 #include "session_manager.hpp"
 #include "toast.hpp"
+#include "loading_screen.hpp"
 
 #include "discord_presence.hpp"
 #include "hosting_badge.hpp"
@@ -122,7 +123,19 @@ bool SessionManager::join(const std::string& roomCode, std::string* error) {
     m_client->connectCode(roomCode);
     ensureScheduled();
     log::info("NexLevel: joining room {}", roomCode);
+    showJoinLoading();
     return true;
+}
+
+std::string SessionManager::joinStatusText() const {
+    if (!m_client) return "";
+    switch (m_client->state()) {
+        case session::ClientState::Connecting: return "Connecting to the room...";
+        case session::ClientState::Joining: return "Downloading the level...";
+        case session::ClientState::Joined: return m_menuJoinPending || !m_editor ? "Opening the editor..." : "Ready!";
+        case session::ClientState::Reconnecting: return "Reconnecting...";
+        default: return "";
+    }
 }
 
 // Copies the open level (content, settings, song, name, description) into a new local level and
@@ -152,8 +165,7 @@ bool SessionManager::joinFromMenu(const std::string& roomCode, std::string* erro
     if (!join(roomCode, error)) return false;
     // The editor opens once the whole level has arrived (openMenuJoinEditor), straight on the room's
     // content: GD's own loader builds it, which is much faster than building it object by object.
-    m_menuJoinPending = true;
-    notify("Joining the room...", NotificationIcon::Loading);
+    m_menuJoinPending = true;  // the loading screen covers the wait
     return true;
 }
 
@@ -200,6 +212,7 @@ void SessionManager::beforeEditorLoads(GJGameLevel* level) {
 }
 
 void SessionManager::leave() {
+    cancelJoinLoading();
     if (m_host || m_client) saveNow(true, "leaving the room");
     if (m_host) {
         ++m_roomGeneration;
@@ -466,6 +479,7 @@ void SessionManager::attachEditor(IEditorBridge* bridge) {
     } else {
         bridge->rebuildFromSession();
     }
+    if (m_client) finishJoinLoading();
 }
 
 void SessionManager::detachEditor(IEditorBridge* bridge) {
@@ -512,6 +526,7 @@ const sync::Replica* SessionManager::view() const {
 }
 
 void SessionManager::endClient(const std::string& message, NotificationIcon icon) {
+    cancelJoinLoading();
     notify(message, icon);
     log::info("NexLevel: {}", message);
     saveNow(true, "room ended");  // the player's backup keeps everything built so far
@@ -567,8 +582,12 @@ void SessionManager::tick(float dt) {
                     m_lastJoined = true;
                     notify("Joined the room", NotificationIcon::Success);
                     m_roomDirty = true;  // first backup of the room soon after joining
-                    if (m_editor) m_editor->rebuildFromSession();
-                    else if (m_menuJoinPending) openMenuJoinEditor();
+                    if (m_editor) {
+                        m_editor->rebuildFromSession();
+                        finishJoinLoading();
+                    } else if (m_menuJoinPending) {
+                        openMenuJoinEditor();  // the loading screen ends once the editor is open
+                    }
                     ids.clear();
                 } else {
                     notify("Reconnected", NotificationIcon::Success);

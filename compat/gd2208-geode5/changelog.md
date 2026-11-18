@@ -1,4 +1,5 @@
 # v1.0.7
+- **Loading screen when joining:** a black screen with the NexLevel logo slides in while you connect and the level loads, then slides away once the room is open (at least 5 seconds).
 - **NexLevel bar:** a small tab at the top of the editor drops down the room status and quick buttons (Look here, Players, Chat, Menu). It replaces the button in the Esc menu.
 - **Chat key:** press **T** in the editor to open the room chat (setting "Chat key"). Unread messages show on the bar.
 - **New notifications:** small cards in the top-right corner with a violet outline and a soft sound (setting "Notification sound"), for chat, players and warnings.

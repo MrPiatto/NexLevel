@@ -73,6 +73,11 @@
 			"default": true
 		}
 	},
+	"resources": {
+		"sprites": [
+			"resources/*.png"
+		]
+	},
 	"tags": [
 		"editor",
 		"online",
