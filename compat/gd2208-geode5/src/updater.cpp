@@ -17,7 +17,7 @@ namespace {
 
 constexpr const char* kLatestReleaseApi = "https://api.github.com/repos/MrPiatto/NexLevel/releases/latest";
 constexpr const char* kPackageName = "forg3studios.nexlevel.geode";
-constexpr float kW = 380.f, kH = 250.f;
+constexpr float kW = 380.f, kH = 270.f;
 
 // A panel in the NexLevel style: title, subtitle, markdown body, up to two buttons.
 class NexPanel : public geode::Popup {
@@ -53,14 +53,19 @@ protected:
         auto* panel = kit::card({kW, kH}, 14.f, kit::rgba(16, 18, 38, .97f), kit::rgba(kit::kViolet, .5f), .7f);
         m_mainLayer->addChildAtPosition(panel, Anchor::Center);
         panel->setZOrder(-10);
-        auto* title = kit::text(m_title, 15.f, kit::kText, 1);
-        m_mainLayer->addChildAtPosition(title, Anchor::Top, {0.f, -22.f});
-        auto* sub = kit::text(m_subtitle, 8.f, kit::kMuted);
-        m_mainLayer->addChildAtPosition(sub, Anchor::Top, {0.f, -40.f});
-        auto* box = kit::card({kW - 30.f, kH - 108.f}, 10.f, kit::rgba(30, 34, 66, .85f), kit::rgba(kit::kViolet, .3f), .8f);
-        m_mainLayer->addChildAtPosition(box, Anchor::Center, {0.f, 4.f});
-        auto* text = MDTextArea::create(m_body.empty() ? "No changelog." : m_body, {kW - 44.f, kH - 118.f});
-        m_mainLayer->addChildAtPosition(text, Anchor::Center, {0.f, 4.f});
+        // The NexLevel logo on top, then the title and a line under it.
+        if (auto* logo = CCSprite::create((std::string(GEODE_MOD_ID) + "/wordmark.png").c_str()); logo && logo->getContentSize().height > 0.f) {
+            logo->setScale(24.f / logo->getContentSize().height);
+            m_mainLayer->addChildAtPosition(logo, Anchor::Top, {0.f, -22.f});
+        }
+        auto* title = kit::text(m_title, 13.f, kit::kText, 1);
+        m_mainLayer->addChildAtPosition(title, Anchor::Top, {0.f, -46.f});
+        auto* sub = kit::text(m_subtitle, 7.5f, kit::kMuted);
+        m_mainLayer->addChildAtPosition(sub, Anchor::Top, {0.f, -61.f});
+        auto* box = kit::card({kW - 30.f, kH - 128.f}, 10.f, kit::rgba(30, 34, 66, .85f), kit::rgba(kit::kViolet, .3f), .8f);
+        m_mainLayer->addChildAtPosition(box, Anchor::Center, {0.f, -6.f});
+        auto* text = MDTextArea::create(m_body.empty() ? "No changelog." : m_body, {kW - 44.f, kH - 138.f});
+        m_mainLayer->addChildAtPosition(text, Anchor::Center, {0.f, -6.f});
         m_status = kit::text("", 9.f, kit::kWarn, 1);
         m_mainLayer->addChildAtPosition(m_status, Anchor::Bottom, {0.f, 26.f});
         m_status->setVisible(false);

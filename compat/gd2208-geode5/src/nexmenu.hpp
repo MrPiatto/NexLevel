@@ -55,6 +55,7 @@ protected:
     void buildChat();
     void buildHistory();
     void onBans(cocos2d::CCObject*);
+    void onReportBug(cocos2d::CCObject*);
     void onOpenRestore(cocos2d::CCObject* sender);
     std::vector<SessionManager::RestorePoint> m_restorePoints;  // behind the History tab's Open buttons
     void onExit() override;

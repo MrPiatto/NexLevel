@@ -99,6 +99,7 @@ I = {
  'eye': '<path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8z" fill="#fff"/><circle cx="8" cy="8" r="2.2" fill="#000"/>',
  'copy': '<rect x="5.2" y="5.2" width="8" height="8.6" rx="1.4" fill="#fff"/><rect x="2.6" y="2.4" width="8" height="8.6" rx="1.4" fill="none" stroke="#fff" stroke-width="1.3" opacity=".7"/>',
  'refresh': '<path d="M12.8 6.6A5 5 0 1 0 13 9.2" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/><path d="M13.6 2.6v4.4H9.2z" fill="#fff"/>',
+ 'bug': '<ellipse cx="8" cy="9.2" rx="3.6" ry="4.4" fill="#fff"/><circle cx="8" cy="4.4" r="2.2" fill="#fff"/><path d="M2.2 7.2h2.4M11.4 7.2h2.4M2 10.4h2.6M11.4 10.4H14M2.8 13.6l2-1.4M13.2 13.6l-2-1.4M5.6 2.2l1 1.4M10.4 2.2l-1 1.4" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/><path d="M8 6v7.4" stroke="#000" stroke-width=".9"/>',
  'globe': '<circle cx="8" cy="8" r="5.8" fill="none" stroke="#fff" stroke-width="1.4"/><ellipse cx="8" cy="8" rx="2.5" ry="5.8" fill="none" stroke="#fff" stroke-width="1.2"/><path d="M2.4 8h11.2" stroke="#fff" stroke-width="1.2"/>',
 }
 for n, b in I.items():

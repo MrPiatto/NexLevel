@@ -1,4 +1,6 @@
 # v1.0.7
+- **Report a bug:** a "Bug" button in the NexLevel menu opens a GitHub issue with your versions already filled in.
+- Update notice and welcome screen in the new style, with the NexLevel logo.
 - **New look:** every NexLevel panel, card, button and notification is redrawn with real high-resolution textures (soft violet glow, slanted buttons like the NexLevel logo, smooth corners), the logo in the menu header, and icons on the tabs, notifications and warnings.
 - **History tab:** who placed, deleted and edited what, with the time, a line every few seconds.
 - **Restore points (host):** a copy of the room every 5 minutes, kept in NexLevel's own folder (not in My Levels). In the History tab, "Open" turns one into a new level in My Levels.

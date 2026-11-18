@@ -10,6 +10,7 @@
 #include <Geode/modify/EditorPauseLayer.hpp>
 #include <Geode/modify/MenuLayer.hpp>
 #include <Geode/ui/GeodeUI.hpp>
+#include <Geode/utils/web.hpp>
 
 #include <nexlevel/core/sync/level_settings.hpp>
 
@@ -143,8 +144,10 @@ void NexMenu::buildTab() {
         addText("NEXLEVEL", 17.f, 22.f, H - 24.f, kit::kText, 1);
         addText("Create Together. Build Beyond.  -  Forg3 Studios", 7.f, 23.f, H - 41.f, kit::kMuted);
     }
-    m_statusDot = add(CCDrawNode::create(), W - 128.f, H - 25.f);
-    m_status = addText("", 8.f, W - 120.f, H - 25.f, kit::kMuted, 1);
+    m_statusDot = add(CCDrawNode::create(), W - 158.f, H - 25.f);
+    m_status = addText("", 8.f, W - 150.f, H - 25.f, kit::kMuted, 1);
+    // Report a bug: opens a new GitHub issue with the versions already filled in.
+    addButton(kit::button("Bug", {46.f, 22.f}, kit::Style::Ghost, this, menu_selector(NexMenu::onReportBug), 7.5f, "bug"), W - 56.f, H - 24.f);
     addButton(kit::button("", {22.f, 22.f}, kit::Style::Ghost, this, menu_selector(NexMenu::onClose2), 9.f, "close"), W - 24.f, H - 24.f);
 
     // ---- tab bar ----
@@ -709,6 +712,34 @@ void NexMenu::buildHistory() {
 }
 
 void NexMenu::onBans(CCObject*) { showBanList(); }
+
+namespace {
+std::string urlEncode(const std::string& s) {
+    static const char* hex = "0123456789ABCDEF";
+    std::string out;
+    for (unsigned char c : s) {
+        if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') out += static_cast<char>(c);
+        else {
+            out += '%';
+            out += hex[c >> 4];
+            out += hex[c & 15];
+        }
+    }
+    return out;
+}
+} // namespace
+
+void NexMenu::onReportBug(CCObject*) {
+    const std::string body = "**NexLevel:** " + Mod::get()->getVersion().toVString() + " (protocol v" + std::to_string(kProtocolVersion) +
+                             ")\n**Geometry Dash:** " GEODE_GD_VERSION_STRING "\n**Geode:** " + Loader::get()->getVersion().toVString() +
+                             "\n\n**What happened?**\n\n\n**How can we make it happen again?**\n1. \n\n"
+                             "**If the game crashed:** attach the newest file from the Geode `logs` folder.\n";
+    const std::string url = "https://github.com/MrPiatto/NexLevel/issues/new?title=" + urlEncode("[Bug] ") + "&body=" + urlEncode(body);
+    geode::createQuickPopup("Report a bug", "This opens <cy>GitHub</c> in your browser with a bug report ready to fill in (you need a GitHub account).",
+                            "Cancel", "Open", [url](FLAlertLayer*, bool open) {
+                                if (open) geode::utils::web::openLinkInBrowser(url);
+                            });
+}
 
 void NexMenu::onOpenRestore(CCObject* sender) {
     const auto i = static_cast<std::size_t>(static_cast<CCNode*>(sender)->getTag());
