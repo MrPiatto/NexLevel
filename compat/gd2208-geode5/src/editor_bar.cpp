@@ -16,7 +16,7 @@ namespace nexlevel::mod {
 
 namespace {
 
-constexpr float kTabW = 96.f, kTabH = 15.f;
+constexpr float kTabW = 112.f, kTabH = 17.f;
 constexpr float kPanelW = 330.f, kPanelH = 34.f;
 
 // True if any popup (NexLevel's or GD's) is open over the editor.
@@ -114,22 +114,34 @@ private:
         m_face->removeAllChildren();  // pictures only, no buttons in here
         auto* sm = SessionManager::get();
         auto* tab = m_face;
-        // Hangs from the top edge: rounded at the bottom (the top is off screen).
-        auto* bg = kit::card({kTabW, kTabH + 8.f}, 7.f, kit::rgba(16, 14, 34, .92f), kit::rgba(kit::kViolet, 1.f), .9f);
+        // Slanted like the logo, hanging from the top edge (its top is off screen).
+        auto* bg = kit::buttonBackground({kTabW, kTabH + 8.f}, kit::Style::Secondary);
         bg->setPosition({kTabW / 2.f, (kTabH + 8.f) / 2.f});
         tab->addChild(bg);
-        auto* dot = CCDrawNode::create();
-        kit::fillCircle(dot, {10.f, kTabH / 2.f}, 2.6f, kit::rgba(sm->inSession() ? kit::kGood : kit::kMuted, 1.f));
-        tab->addChild(dot);
-        auto* label = kit::text(std::string("NexLevel  ") + (m_open ? "^" : "v"), 7.f, kit::kText, 1);
-        label->setPosition({kTabW / 2.f + 2.f, kTabH / 2.f});
-        tab->addChild(label);
+        auto* marks = CCDrawNode::create();
+        // In a room: green dot; not: grey.
+        kit::fillCircle(marks, {14.f, kTabH / 2.f}, 2.6f, kit::rgba(sm->inSession() ? kit::kGood : kit::kMuted, 1.f));
+        // Chevron: down when closed, up when open.
+        const float cx = kTabW / 2.f + 30.f, cy = kTabH / 2.f, d = m_open ? -1.f : 1.f;
+        const auto chev = kit::rgba(200, 180, 255, 1.f);
+        marks->drawSegment({cx - 2.5f, cy + 1.2f * d}, {cx, cy - 1.3f * d}, .6f, chev);
+        marks->drawSegment({cx, cy - 1.3f * d}, {cx + 2.5f, cy + 1.2f * d}, .6f, chev);
+        tab->addChild(marks);
+        if (auto* logo = CCSprite::create((std::string(GEODE_MOD_ID) + "/wordmark.png").c_str()); logo && logo->getContentSize().height > 0.f) {
+            logo->setScale(12.f / logo->getContentSize().height);
+            logo->setPosition({kTabW / 2.f - 4.f, kTabH / 2.f});
+            tab->addChild(logo);
+        } else {
+            auto* label = kit::text("NexLevel", 7.f, kit::kText, 1);
+            label->setPosition({kTabW / 2.f - 4.f, kTabH / 2.f});
+            tab->addChild(label);
+        }
         if (const auto unread = sm->chatUnread(); unread > 0) {  // unread chat messages
             auto* badge = CCDrawNode::create();
-            kit::fillCircle(badge, {kTabW - 9.f, kTabH / 2.f}, 5.5f, kit::rgba(kit::kTeal, 1.f));
+            kit::fillCircle(badge, {kTabW / 2.f + 44.f, kTabH / 2.f}, 5.f, kit::rgba(196, 60, 255, 1.f));
             tab->addChild(badge);
-            auto* n = kit::text(unread > 9 ? "9+" : std::to_string(unread), 5.5f, {10, 20, 30}, 1);
-            n->setPosition({kTabW - 9.f, kTabH / 2.f});
+            auto* n = kit::text(unread > 9 ? "9+" : std::to_string(unread), 5.5f, {255, 255, 255}, 1);
+            n->setPosition({kTabW / 2.f + 44.f, kTabH / 2.f});
             tab->addChild(n);
         }
     }
