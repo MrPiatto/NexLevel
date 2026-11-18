@@ -479,7 +479,12 @@ void SessionManager::attachEditor(IEditorBridge* bridge) {
     } else {
         bridge->rebuildFromSession();
     }
-    if (m_client) finishJoinLoading();
+    if (m_client) {
+        finishJoinLoading();
+        // The temporary level was only a fast way to open the room: once the editor has it, the
+        // level in "My Levels" is emptied, so it can't be cloned or exported while the room is open.
+        if (m_tempLevel && bridge->level() == m_tempLevel) m_tempLevel->m_levelString = "";
+    }
 }
 
 void SessionManager::detachEditor(IEditorBridge* bridge) {

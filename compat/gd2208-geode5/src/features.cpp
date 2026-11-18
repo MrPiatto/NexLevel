@@ -58,6 +58,9 @@ bool SessionManager::isViewOnly(sync::PeerId peer) const {
 }
 
 void SessionManager::editorClosed() {
+    // A player leaving the room's editor can't take objects along: copying in there and pasting
+    // into one of their own levels would copy the host's work.
+    if (m_client || m_noSaveLevel) GameManager::get()->m_editorClipboard = "";
     if (m_noSaveLevel) {
         m_noSaveLevel->release();
         m_noSaveLevel = nullptr;
