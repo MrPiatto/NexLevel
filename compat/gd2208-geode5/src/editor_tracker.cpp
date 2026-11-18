@@ -512,20 +512,10 @@ public:
 
     void applyRemote(const std::vector<nls::NetId>& ids) override {
         auto* view = SessionManager::get()->view();
-        if (!view) {
+        // While playtesting nothing is touched: GD is running the level, and changing it mid-test
+        // is not safe. Everything the others did is applied as soon as the test ends.
+        if (!view || m_paused) {
             for (auto id : ids) m_deferred.insert(id);
-            return;
-        }
-        if (m_paused) {
-            // Playtesting: new objects from the others appear right away, so the player can test
-            // what was just built. Changes to existing objects wait until the test ends (GD is
-            // moving and colliding with them; replacing one mid-test is not safe).
-            RemoteScope scope(*this);
-            for (auto id : ids) {
-                const auto* state = nls::isLevelSettings(id) ? nullptr : view->find(id);
-                if (m_playtesting && state && !m_idToObj.contains(id)) spawn(id, state->props);
-                else m_deferred.insert(id);
-            }
             return;
         }
         RemoteScope scope(*this);

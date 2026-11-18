@@ -5,7 +5,7 @@
 - **New notifications:** small cards in the top-right corner with a violet outline and a soft sound (setting "Notification sound"), for chat, players and warnings.
 - **Private rooms in the list:** rooms are now Public, Private or Hidden (host, Settings tab). Private rooms show in everyone's room list; players tap **Ask** and the host gets a request to Accept or Decline. Accepted players join without ever seeing the code.
 - **Warnings for everyone:** when someone deletes 100+ objects at once, copies 100+ objects, tries to save a copy of the level, changes the level settings, or the host removes a player's work.
-- **Playtests:** objects placed by the others appear right away while you playtest; the player's name is shown above their icon; their view frame is hidden while they test; the playtest path uses GD's own line in the player's colour.
+- **Playtests:** the player's name is shown above their icon; their view frame is hidden while they test; the playtest path uses GD's own line in the player's colour.
 - Fixed: with camera effects (bulge, shockwave...) the other players' view frames and names were repeated all over the screen.
 - Everyone in a room needs v1.0.7 (protocol v10). Update the relay server for private room requests.
 
