@@ -7,7 +7,9 @@
 #include "ui_common.hpp"
 #include "ui_kit.hpp"
 
+#include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <string>
 
 using namespace geode::prelude;
@@ -16,7 +18,8 @@ namespace nexlevel::mod {
 
 namespace {
 
-constexpr float kTabW = 112.f, kTabH = 17.f;
+constexpr float kTabW = 84.f, kTabH = 13.f;
+constexpr GLubyte kFaded = 90;  // tab opacity while the mouse is elsewhere
 constexpr float kPanelW = 330.f, kPanelH = 34.f;
 
 // True if any popup (NexLevel's or GD's) is open over the editor.
@@ -63,7 +66,8 @@ public:
         m_tabMenu = CCMenu::create();
         m_tabMenu->setPosition({0.f, 0.f});
         this->addChild(m_tabMenu, 1);
-        m_face = CCNode::create();
+        m_face = CCNodeRGBA::create();
+        m_face->setCascadeOpacityEnabled(true);
         m_face->setContentSize({kTabW, kTabH});
         auto* item = CCMenuItemSpriteExtra::create(m_face, this, menu_selector(EditorBar::onTab));
         item->m_scaleMultiplier = 1.04f;
@@ -82,28 +86,36 @@ public:
         if (sig != m_sig) {
             m_sig = sig;
             drawTab();  // picture only: the button itself stays
+            m_face->setOpacity(m_face->getOpacity());  // new pictures take the current fade
         }
         // Joined / left a room while the strip is open: close it (its buttons are rebuilt on the next open).
         if (m_open && sm->inSession() != m_panelInSession) close(true);
         if (m_open && m_statusLabel) kit::setTextIfChanged(m_statusLabel, statusText());
+
+        // See-through over GD's slider; fully visible with the mouse on it, or while open.
+        bool hover = m_open;
+#ifdef GEODE_IS_DESKTOP
+        const auto mouse = geode::cocos::getMousePos();
+        const auto win = CCDirector::sharedDirector()->getWinSize();
+        hover = hover || (std::abs(mouse.x - win.width / 2.f) < kTabW / 2.f + 10.f && mouse.y > m_tabY - kTabH / 2.f - 8.f);
+#endif
+        const GLubyte target = hover ? 255 : kFaded;
+        const int cur = m_face->getOpacity();
+        if (cur != target) m_face->setOpacity(static_cast<GLubyte>(cur + std::clamp(static_cast<int>(target) - cur, -25, 25)));
+        if (m_marks) m_marks->setVisible(m_face->getOpacity() > 200);
     }
 
 private:
     CCMenu* m_tabMenu = nullptr;
     float m_tabY = 0.f;
 
-    // Just under GD's level position slider (top centre), so the slider stays free.
-    static float tabYFor(EditorUI* ui) {
+    // Hangs from the top edge, over GD's level slider: small, and see-through until the mouse is on it.
+    static float tabYFor(EditorUI*) {
         const auto win = CCDirector::sharedDirector()->getWinSize();
-        float y = win.height - kTabH / 2.f - 26.f;
-        if (ui && ui->m_positionSlider && ui->m_positionSlider->getParent()) {
-            auto* slider = ui->m_positionSlider;
-            const auto p = ui->convertToNodeSpace(slider->getParent()->convertToWorldSpace(slider->getPosition()));
-            if (p.y > win.height * .6f && p.y <= win.height) y = p.y - 14.f - kTabH / 2.f;
-        }
-        return y;
+        return win.height - kTabH / 2.f;
     }
-    CCNode* m_face = nullptr;  // the tab's picture (redrawn), inside a button that is never replaced
+    CCNodeRGBA* m_face = nullptr;
+    CCDrawNode* m_marks = nullptr;  // dot + chevron: shown only when the tab is not faded  // the tab's picture (redrawn), inside a button that is never replaced
     bool m_panelInSession = false;
     CCNode* m_panel = nullptr;
     CCLabelTTF* m_statusLabel = nullptr;
@@ -128,22 +140,23 @@ private:
         m_face->removeAllChildren();  // pictures only, no buttons in here
         auto* sm = SessionManager::get();
         auto* tab = m_face;
-        // Slanted like the logo.
-        auto* bg = kit::buttonBackground({kTabW, kTabH}, kit::Style::Secondary);
-        bg->setPosition({kTabW / 2.f, kTabH / 2.f});
+        // Slanted like the logo, hanging from the top edge (its top is off screen).
+        auto* bg = kit::buttonBackground({kTabW, kTabH + 8.f}, kit::Style::Secondary);
+        bg->setPosition({kTabW / 2.f, (kTabH + 8.f) / 2.f});
         tab->addChild(bg);
         auto* marks = CCDrawNode::create();
         // In a room: green dot; not: grey.
-        kit::fillCircle(marks, {14.f, kTabH / 2.f}, 2.6f, kit::rgba(sm->inSession() ? kit::kGood : kit::kMuted, 1.f));
+        m_marks = marks;
+        kit::fillCircle(marks, {11.f, kTabH / 2.f}, 2.2f, kit::rgba(sm->inSession() ? kit::kGood : kit::kMuted, 1.f));
         // Chevron: down when closed, up when open.
-        const float cx = kTabW / 2.f + 30.f, cy = kTabH / 2.f, d = m_open ? -1.f : 1.f;
+        const float cx = kTabW / 2.f + 24.f, cy = kTabH / 2.f, d = m_open ? -1.f : 1.f;
         const auto chev = kit::rgba(200, 180, 255, 1.f);
         marks->drawSegment({cx - 2.5f, cy + 1.2f * d}, {cx, cy - 1.3f * d}, .6f, chev);
         marks->drawSegment({cx, cy - 1.3f * d}, {cx + 2.5f, cy + 1.2f * d}, .6f, chev);
         tab->addChild(marks);
         if (auto* logo = CCSprite::create((std::string(GEODE_MOD_ID) + "/wordmark.png").c_str()); logo && logo->getContentSize().height > 0.f) {
-            logo->setScale(12.f / logo->getContentSize().height);
-            logo->setPosition({kTabW / 2.f - 4.f, kTabH / 2.f});
+            logo->setScale(9.f / logo->getContentSize().height);
+            logo->setPosition({kTabW / 2.f - 2.f, kTabH / 2.f});
             tab->addChild(logo);
         } else {
             auto* label = kit::text("NexLevel", 7.f, kit::kText, 1);
@@ -152,10 +165,10 @@ private:
         }
         if (const auto unread = sm->chatUnread(); unread > 0) {  // unread chat messages
             auto* badge = CCDrawNode::create();
-            kit::fillCircle(badge, {kTabW / 2.f + 44.f, kTabH / 2.f}, 5.f, kit::rgba(196, 60, 255, 1.f));
+            kit::fillCircle(badge, {kTabW / 2.f + 36.f, kTabH / 2.f}, 4.5f, kit::rgba(196, 60, 255, 1.f));
             tab->addChild(badge);
             auto* n = kit::text(unread > 9 ? "9+" : std::to_string(unread), 5.5f, {255, 255, 255}, 1);
-            n->setPosition({kTabW / 2.f + 44.f, kTabH / 2.f});
+            n->setPosition({kTabW / 2.f + 36.f, kTabH / 2.f});
             tab->addChild(n);
         }
     }
