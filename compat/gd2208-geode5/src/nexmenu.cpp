@@ -847,13 +847,37 @@ class $modify(NLMenuLayerButton, MenuLayer) {
 // bar at the top of the editor, see editor_bar.cpp.)
 class $modify(NLEditorPauseLayer, EditorPauseLayer) {
     // Players in someone else's room can't save it: the room (and the level) stays the host's.
-    void saveLevel() {
+    // Every way GD saves from here is blocked (Save, Save and Play, Save and Exit, and the play steps
+    // that Save and Play goes through): any of them would write the room into the player's level.
+    bool blocked() {
         auto* sm = nexlevel::mod::SessionManager::get();
-        if (m_editorLayer && sm->saveLocked(m_editorLayer->m_level)) {
-            nexlevel::mod::notify("Only the host saves this level", NotificationIcon::Info);
-            sm->sendAlert(nexlevel::session::AlertKind::CopyAttempt);
-            return;
-        }
+        if (!m_editorLayer || !sm->saveLocked(m_editorLayer->m_level)) return false;
+        nexlevel::mod::notify("Only the host saves this level - use Exit to leave", NotificationIcon::Info);
+        sm->sendAlert(nexlevel::session::AlertKind::CopyAttempt);
+        return true;
+    }
+    void saveLevel() {
+        if (blocked()) return;
         EditorPauseLayer::saveLevel();
+    }
+    void onSave(CCObject* sender) {
+        if (blocked()) return;
+        EditorPauseLayer::onSave(sender);
+    }
+    void onSaveAndPlay(CCObject* sender) {
+        if (blocked()) return;
+        EditorPauseLayer::onSaveAndPlay(sender);
+    }
+    void onSaveAndExit(CCObject* sender) {
+        if (blocked()) return;
+        EditorPauseLayer::onSaveAndExit(sender);
+    }
+    void playStep2() {
+        if (blocked()) return;
+        EditorPauseLayer::playStep2();
+    }
+    void playStep3() {
+        if (blocked()) return;
+        EditorPauseLayer::playStep3();
     }
 };
