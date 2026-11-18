@@ -318,7 +318,7 @@ void NexMenu::buildPlayers() {
     if (host) {
         addButton(kit::button("Bans (" + std::to_string(sm->savedBans().size()) + ")", {60.f, 15.f}, kit::Style::Ghost, this,
                               menu_selector(NexMenu::onBans), 6.5f),
-                  W - 134.f, kContentTop - 6.f);
+                  250.f, kContentTop - 6.f);  // left of the PING column (it overlapped the header)
     }
     const std::size_t maxRows = 6;
     std::map<sync::PeerId, std::size_t> placed;  // objects in the level per player (credits)
