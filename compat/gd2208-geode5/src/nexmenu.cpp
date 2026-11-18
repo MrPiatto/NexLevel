@@ -147,7 +147,7 @@ void NexMenu::buildTab() {
     m_statusDot = add(CCDrawNode::create(), W - 158.f, H - 25.f);
     m_status = addText("", 8.f, W - 150.f, H - 25.f, kit::kMuted, 1);
     // Report a bug: opens a new GitHub issue with the versions already filled in.
-    addButton(kit::button("Bug", {46.f, 22.f}, kit::Style::Ghost, this, menu_selector(NexMenu::onReportBug), 7.5f, "bug"), W - 56.f, H - 24.f);
+    addButton(kit::button("Bug", {46.f, 22.f}, kit::Style::Ghost, this, menu_selector(NexMenu::onReportBug), 7.5f, "bug"), W - 64.f, H - 24.f);
     addButton(kit::button("", {22.f, 22.f}, kit::Style::Ghost, this, menu_selector(NexMenu::onClose2), 9.f, "close"), W - 24.f, H - 24.f);
 
     // ---- tab bar ----
