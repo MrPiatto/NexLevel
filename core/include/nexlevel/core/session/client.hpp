@@ -79,6 +79,8 @@ public:
     // Risky-action alerts: send one about this player (the others are told); take the others'.
     void sendAlert(AlertKind kind, std::uint32_t count, sync::PeerId subject = 0);
     std::vector<Alert> takeAlerts();
+    // Ops sequenced since the last call, counted per author (the local player's included).
+    std::map<sync::PeerId, OpTally> takeOpTally();
 
     ClientState state() const noexcept;
     const std::string& lastError() const noexcept;

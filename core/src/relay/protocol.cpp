@@ -250,7 +250,7 @@ std::string getText(std::span<const std::uint8_t> in, std::size_t at, std::size_
 
 std::array<std::uint8_t, kListingSize> encodeListing(bool listed, std::uint8_t players, std::uint8_t maxPlayers,
                                                       std::uint16_t roomKey, const std::string& host, const std::string& level,
-                                                      bool privateRoom) {
+                                                      bool privateRoom, std::uint8_t protocol) {
     std::array<std::uint8_t, kListingSize> out{};
     out[0] = listed ? (privateRoom ? 2 : 1) : 0;
     if (privateRoom) roomKey = 0;  // a private room's key is only given to players the host accepts
@@ -259,7 +259,8 @@ std::array<std::uint8_t, kListingSize> encodeListing(bool listed, std::uint8_t p
     out[3] = static_cast<std::uint8_t>(roomKey & 0xFF);
     out[4] = static_cast<std::uint8_t>(roomKey >> 8);
     putText(out, 5, 21, host);
-    putText(out, 26, 22, level);
+    putText(out, 26, 21, level);
+    out[47] = protocol;
     return out;
 }
 
@@ -275,7 +276,9 @@ std::optional<PublicRoom> decodeListingRecord(std::span<const std::uint8_t> rec)
     r.maxPlayers = l[2];
     r.roomKey = r.privateRoom ? 0 : static_cast<std::uint16_t>(l[3] | (l[4] << 8));
     r.host = getText(l, 5, 21);
-    r.level = getText(l, 26, 22);
+    r.level = getText(l, 26, 21);
+    // Byte 47 was the last name character in older listings: printable means an old mod.
+    r.protocol = (l[47] >= 32 && l[47] < 127) ? 0 : l[47];
     return r;
 }
 

@@ -78,7 +78,8 @@ inline constexpr std::size_t kJoinNameSize = 24;
 
 // Room listing (opt-in by the host). Fixed 48 bytes: u8 listed (0 no, 1 public, 2 private: shown,
 // joined by asking the host), u8 players, u8 maxPlayers, u16 roomKey (0 for private rooms),
-// 21 bytes host name, 22 bytes level name (zero padded).
+// 21 bytes host name, 21 bytes room/level name (zero padded), u8 the host's session protocol
+// version (0 = unknown: listings of older mods, whose name used that byte).
 inline constexpr std::size_t kListingSize = 48;
 inline constexpr std::size_t kListingRecordSize = 4 + kListingSize;
 struct PublicRoom {
@@ -89,10 +90,11 @@ struct PublicRoom {
     std::string host;
     std::string level;
     bool privateRoom = false;  // no key: join with requestJoin()
+    std::uint8_t protocol = 0; // host's session protocol (0 = older mod)
 };
 std::array<std::uint8_t, kListingSize> encodeListing(bool listed, std::uint8_t players, std::uint8_t maxPlayers,
                                                       std::uint16_t roomKey, const std::string& host, const std::string& level,
-                                                      bool privateRoom = false);
+                                                      bool privateRoom = false, std::uint8_t protocol = 0);
 std::optional<PublicRoom> decodeListingRecord(std::span<const std::uint8_t> record);
 
 std::vector<std::uint8_t> encode(const Message& m);

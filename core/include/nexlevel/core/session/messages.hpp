@@ -100,6 +100,11 @@ struct Alert {
     std::uint32_t count = 0;
     sync::PeerId subject = 0;
 };
+// Who changed the level, counted per player (for the room's history). Not sent on the wire: every
+// side counts the ops it sees sequenced.
+struct OpTally {
+    std::uint32_t created = 0, deleted = 0, edited = 0;
+};
 struct Rejected {
     std::uint32_t clientSeq = 0;
     std::uint8_t reason = 0;

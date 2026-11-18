@@ -159,6 +159,14 @@ void testChatAndViewOnly() {
     CHECK(ba.size() == 2);
     CHECK(!decodeAlert(std::vector<std::uint8_t>{1, 0, 9, 0, 0, 0, 0, 0, 0}).has_value());  // unknown kind
 
+    // History: every side counts who changed what.
+    {
+        auto tallyA = a.takeOpTally();
+        auto tallyH = host.takeOpTally();
+        CHECK(tallyH.contains(*a.peerId()) && tallyH[*a.peerId()].created >= 1);
+        CHECK(tallyA.contains(*a.peerId()));
+    }
+
     // Ban: B is removed and cannot come back; max players refuses extra players.
     const auto bId = *b.peerId();
     CHECK(host.ban(bId));
@@ -167,6 +175,12 @@ void testChatAndViewOnly() {
     b2.connect("127.0.0.1", host.port(), host.roomKey());
     CHECK(waitFor([&] { host.pump(); b2.pump(); }, [&] { return b2.state() == ClientState::Refused; }, 3000));
     CHECK(b2.refuseReason() == RefuseReason::Banned);
+    // The ban list is kept (and can be restored / undone).
+    auto bans = host.bans();
+    CHECK(bans.size() == 1 && bans[0].name == "B");
+    CHECK(host.unban(bans[0]) && host.bans().empty());
+    host.setBans(bans);
+    CHECK(host.bans().size() == 1);
     host.setMaxPlayers(1);  // A is already in
     SessionClient c(GameTarget::GD2208, "C");
     c.connect("127.0.0.1", host.port(), host.roomKey());

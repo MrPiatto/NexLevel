@@ -333,6 +333,10 @@ struct SessionHost::Impl {
         });
     }
     void broadcast(const sync::Op& op) {
+        auto& t = opTally[op.author];
+        if (op.kind == sync::OpKind::Create) ++t.created;
+        else if (op.kind == sync::OpKind::Delete) ++t.deleted;
+        else ++t.edited;
         auto payload = encodeOpMsg(op);
         for (auto& [conn, p] : peers) {
             if (p.joined) sendTo(conn, MsgType::Sequenced, payload);
@@ -346,8 +350,14 @@ struct SessionHost::Impl {
         return out;
     }
     std::set<sync::PeerId> viewOnly;   // players the host turned editing off for
-    std::set<std::uint32_t> bannedAccounts;  // banned GD accounts (and names, for players without one)
-    std::set<std::string> bannedNames;
+    std::vector<SessionHost::BanEntry> banList;  // GD account, or the name for players without one
+    std::map<sync::PeerId, OpTally> opTally;
+    bool isBanned(std::uint32_t accountId, const std::string& name) const {
+        for (const auto& b : banList) {
+            if (b.accountId != 0 ? b.accountId == accountId : (accountId == 0 && b.name == name)) return true;
+        }
+        return false;
+    }
     std::size_t maxPlayers = kMaxPeers;      // other players allowed in (host not counted)
     bool settingsLocked = false;             // only the host may change the level settings
     std::vector<ChatMessage> chatInbox;
@@ -464,8 +474,7 @@ struct SessionHost::Impl {
             }
         }
         if (!resumed) {
-            const bool banned = (hello->accountId != 0 && bannedAccounts.contains(hello->accountId)) ||
-                                bannedNames.contains(hello->displayName);
+            const bool banned = isBanned(hello->accountId, hello->displayName);
             if (banned) {
                 sendTo(conn, MsgType::Refuse, encode(Refuse{RefuseReason::Banned, target}), true);
                 return;
@@ -816,6 +825,19 @@ void SessionHost::setPublicListing(std::optional<std::array<std::uint8_t, relay:
     m->listingWanted = listing ? listing : std::optional<std::array<std::uint8_t, relay::kListingSize>>(std::array<std::uint8_t, relay::kListingSize>{});
 }
 
+std::vector<SessionHost::BanEntry> SessionHost::bans() const { return m->banList; }
+void SessionHost::setBans(std::vector<BanEntry> list) {
+    if (list.size() > 500) list.resize(500);
+    m->banList = std::move(list);
+}
+bool SessionHost::unban(const BanEntry& entry) {
+    auto it = std::find(m->banList.begin(), m->banList.end(), entry);
+    if (it == m->banList.end()) return false;
+    m->banList.erase(it);
+    return true;
+}
+std::map<sync::PeerId, OpTally> SessionHost::takeOpTally() { return std::exchange(m->opTally, {}); }
+
 std::vector<SessionHost::JoinRequest> SessionHost::takeJoinRequests() {
     std::lock_guard lk(m->relayRttMutex);
     return std::exchange(m->joinRequestsIn, {});
@@ -833,8 +855,8 @@ bool SessionHost::settingsLocked() const { return m->settingsLocked; }
 bool SessionHost::ban(sync::PeerId peer) {
     for (auto& [_, p] : m->peers) {
         if (!p.joined || p.id != peer) continue;
-        if (p.accountId != 0) m->bannedAccounts.insert(p.accountId);
-        else m->bannedNames.insert(p.name);
+        BanEntry entry{p.accountId, p.name};
+        if (std::find(m->banList.begin(), m->banList.end(), entry) == m->banList.end()) m->banList.push_back(entry);
         return kick(peer);
     }
     return false;

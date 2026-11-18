@@ -68,6 +68,7 @@ struct SessionClient::Impl {
     std::vector<ChatMessage> chatInbox;
     std::vector<Marker> markerInbox;
     std::vector<Alert> alertInbox;
+    std::map<sync::PeerId, OpTally> opTally;
     RttTracker rtt;
     std::map<sync::PeerId, std::uint16_t> pingTable;
     std::map<sync::PeerId, PlayTrail> trails;
@@ -455,6 +456,10 @@ std::vector<sync::NetId> SessionClient::pump() {
                 } else if (m->state == ClientState::Joined && type == MsgType::Sequenced) {
                     auto op = decodeOpMsg(e.frame.payload);
                     if (!op) { m->error = "malformed op from host"; disconnect(); break; }
+                    auto& t = m->opTally[op->author];
+                    if (op->kind == sync::OpKind::Create) ++t.created;
+                    else if (op->kind == sync::OpKind::Delete) ++t.deleted;
+                    else ++t.edited;
                     auto c = m->replica->onSequenced(*op);
                     changed.insert(changed.end(), c.begin(), c.end());
                 } else if (m->state == ClientState::Joined && type == MsgType::Rejected) {
@@ -526,6 +531,7 @@ void SessionClient::sendAlert(AlertKind kind, std::uint32_t count, sync::PeerId 
     m->send(MsgType::Alert, encode(Alert{0, kind, count, subject}));
 }
 std::vector<Alert> SessionClient::takeAlerts() { return std::exchange(m->alertInbox, {}); }
+std::map<sync::PeerId, OpTally> SessionClient::takeOpTally() { return std::exchange(m->opTally, {}); }
 
 std::vector<Presence> SessionClient::presences() const {
     std::vector<Presence> out;

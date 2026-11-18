@@ -87,6 +87,15 @@ public:
     void setSettingsLocked(bool on);
     bool settingsLocked() const;
     bool ban(sync::PeerId peer);
+    // Banned players (GD account, or the name for players without one). setBans() restores a saved list.
+    struct BanEntry {
+        std::uint32_t accountId = 0;
+        std::string name;
+        bool operator==(const BanEntry&) const = default;
+    };
+    std::vector<BanEntry> bans() const;
+    void setBans(std::vector<BanEntry> list);
+    bool unban(const BanEntry& entry);
     // Public room list on the relay (relay::encodeListing; nullopt = not listed). Sent within a second.
     void setPublicListing(std::optional<std::array<std::uint8_t, relay::kListingSize>> listing);
     // Private listed rooms: players asking to join through the relay. answerJoinRequest() gives an
@@ -107,6 +116,8 @@ public:
     // Risky-action alerts: send one about this player (the others are told); take the others'.
     void sendAlert(AlertKind kind, std::uint32_t count, sync::PeerId subject = 0);
     std::vector<Alert> takeAlerts();
+    // Ops sequenced since the last call, counted per author (the local player's included).
+    std::map<sync::PeerId, OpTally> takeOpTally();
 
 private:
     struct Impl;

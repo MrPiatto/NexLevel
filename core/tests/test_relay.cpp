@@ -104,7 +104,7 @@ void testRelaySession() {
     }
     if (joined) {  // public room list: listed, then unlisted
         const relay::RelayEndpoint ep{3, "test", "127.0.0.1", *rport};
-        host.setPublicListing(relay::encodeListing(true, 3, 8, host.roomKey(), "HostName", "My Level"));
+        host.setPublicListing(relay::encodeListing(true, 3, 8, host.roomKey(), "HostName", "My Level", false, 10));
         std::vector<relay::PublicRoom> rooms;
         CHECK(waitFor(pumpAll, [&] {
             rooms = relay::listPublicRooms(ep, std::chrono::milliseconds(800));
@@ -113,6 +113,7 @@ void testRelaySession() {
         if (rooms.size() == 1) {
             CHECK(rooms[0].roomId == host.relayRoomId() && rooms[0].roomKey == host.roomKey());
             CHECK(rooms[0].host == "HostName" && rooms[0].level == "My Level" && rooms[0].players == 3 && rooms[0].maxPlayers == 8);
+            CHECK(rooms[0].protocol == 10);
         }
         // Private listing: shown without the key; a join request reaches the host, who accepts one
         // (the player gets the key) and declines another.
