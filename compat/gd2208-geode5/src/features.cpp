@@ -265,9 +265,10 @@ void SessionManager::askToJoin(const PublicRoomEntry& room, bool fromEditor) {
                 return;
             }
             if (sm->inSession()) return;  // joined something else meanwhile
-            room.address.key = result.roomKey;
+            auto address = room.address;  // the key the host sent, for this join only
+            address.key = result.roomKey;
             std::string error;
-            const auto code = session::encodeRoomCode(room.address);
+            const auto code = session::encodeRoomCode(address);
             const bool ok = fromEditor && sm->m_editor ? sm->join(code, &error) : sm->joinFromMenu(code, &error);
             if (ok) toast("Request accepted", "Joining " + room.host + "'s room", ToastKind::Success);
             else toast("Could not join", error, ToastKind::Error);
