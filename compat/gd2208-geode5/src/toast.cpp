@@ -33,6 +33,17 @@ ccColor3B accentFor(ToastKind kind) {
     return kit::kViolet;
 }
 
+const char* iconFor(ToastKind kind) {
+    switch (kind) {
+        case ToastKind::Success: return "check";
+        case ToastKind::Warning: return "warning";
+        case ToastKind::Error: return "error";
+        case ToastKind::Chat: return "chat";
+        case ToastKind::Info: break;
+    }
+    return "info";
+}
+
 const char* soundFor(ToastKind kind) {
     switch (kind) {
         case ToastKind::Warning:
@@ -67,27 +78,28 @@ public:
         CCLabelTTF* body = nullptr;
         float h = 12.f + titleLabel->getContentSize().height * titleLabel->getScale();
         if (!text.empty()) {
-            body = kit::wrappedText(text, 6.5f, kWidth - 18.f, kit::kMuted);
+            body = kit::wrappedText(text, 6.5f, kWidth - 28.f, kit::kMuted);
             h += body->getContentSize().height + 1.f;
         }
         h = std::max(h, 24.f);
 
         const auto accent = accentFor(kind);
-        auto* bg = CCDrawNode::create();
-        auto pts = kit::roundedRectPoints(kWidth, h, 6.f, 6);
-        bg->drawPolygon(pts.data(), static_cast<unsigned>(pts.size()), kit::rgba(14, 12, 30, .94f), 1.1f, kit::rgba(kit::kViolet, 1.f));
-        // Small accent bar on the left in the kind's colour.
-        CCPoint bar[4] = {{5.f, 5.f}, {7.f, 5.f}, {7.f, h - 5.f}, {5.f, h - 5.f}};
-        bg->drawPolygon(bar, 4, kit::rgba(accent, 1.f), 0.f, kit::rgba(accent, 0.f));
+        auto* bg = kit::toastBackground({kWidth, h});
+        bg->setPosition({kWidth / 2.f, h / 2.f});
         card->addChild(bg);
         card->setContentSize({kWidth, h});
+        // The kind's icon on the left, in its colour.
+        if (auto* ic = kit::icon(iconFor(kind), 11.f, accent)) {
+            ic->setPosition({12.f, h - 11.f});
+            card->addChild(ic);
+        }
 
         titleLabel->setAnchorPoint({0.f, 1.f});
-        titleLabel->setPosition({12.f, h - 5.f});
+        titleLabel->setPosition({22.f, h - 5.f});
         card->addChild(titleLabel);
         if (body) {
             body->setAnchorPoint({0.f, 1.f});
-            body->setPosition({12.f, h - 6.f - titleLabel->getContentSize().height});
+            body->setPosition({22.f, h - 6.f - titleLabel->getContentSize().height});
             card->addChild(body);
         }
 

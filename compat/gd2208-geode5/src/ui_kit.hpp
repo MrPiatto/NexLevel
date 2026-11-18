@@ -40,8 +40,13 @@ cocos2d::CCLabelTTF* wrappedText(const std::string& s, float size, float width, 
 
 enum class Style { Primary, Secondary, Danger, Ghost };
 // A button: rounded, gradient for Primary. Tag/userObject are free for the caller.
+// iconName: one of resources/icon_*.png without prefix/extension ("chat", "players"...), shown before the text.
 CCMenuItemSpriteExtra* button(const std::string& caption, cocos2d::CCSize size, Style style, cocos2d::CCObject* target,
-                              cocos2d::SEL_MenuHandler sel, float fontSize = 9.f);
+                              cocos2d::SEL_MenuHandler sel, float fontSize = 9.f, const char* iconName = nullptr);
+// White icon from resources/icon_<name>.png, tinted, `size` points wide (nullptr if missing).
+cocos2d::CCSprite* icon(const std::string& name, float size, cocos2d::ccColor3B color);
+// Background of a notification card (textured, violet outline and glow).
+cocos2d::CCNode* toastBackground(cocos2d::CCSize size);
 // Small rounded label ("HOST", "32 ms").
 cocos2d::CCNode* chip(const std::string& caption, cocos2d::ccColor3B color, float fontSize = 7.f);
 // Circle with the first letter of a name.

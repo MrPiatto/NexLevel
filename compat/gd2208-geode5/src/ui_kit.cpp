@@ -1,5 +1,7 @@
 #include "ui_kit.hpp"
 
+#include <Geode/ui/NineSlice.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <cctype>
@@ -125,13 +127,94 @@ std::vector<CCPoint> roundedRectPoints(float w, float h, float r, int steps) {
     return dedupe(std::move(pts));
 }
 
-CCNode* card(CCSize size, float radius, ccColor4F fill, ccColor4F border, float borderWidth) {
+namespace {
+
+// ---- textures (resources/*.png, drawn at 4x by tools/ui/gen_ui.py) ----
+// Each texture is a rounded shape of corner radius r0 (points) with `margin` points of glow/shadow
+// around it. It is stretched as a nine-slice and scaled so its corners match the wanted radius.
+struct Skin {
+    const char* file;
+    float r0, margin, w, h;
+};
+constexpr Skin kPanelSkin{"panel.png", 16.f, 10.f, 60.f, 60.f};
+constexpr Skin kCardSkin{"card.png", 10.f, 0.f, 28.f, 28.f};
+constexpr Skin kFieldSkin{"field.png", 8.f, 0.f, 24.f, 24.f};
+constexpr Skin kToastSkin{"toast.png", 8.f, 6.f, 36.f, 36.f};
+constexpr Skin kPillSkin{nullptr, 16.f, 4.f, 72.f, 40.f};
+
+std::string spriteName(const char* file) { return std::string(GEODE_MOD_ID) + "/" + file; }
+
+// Background node (anchor centre) of `size` from a skin; nullptr if the texture is missing.
+CCNode* skinned(const Skin& skin, const char* file, CCSize size, float radius) {
+    if (!file || size.width < 2.f || size.height < 2.f) return nullptr;
+    const float inset = std::min(skin.margin + skin.r0 + 1.f, std::min(skin.w, skin.h) / 2.f - 1.f);
+    float k = std::clamp(radius / skin.r0, .2f, 3.f);
+    // The corners (inset * k each side) must fit in the node.
+    k = std::min({k, (size.width + 2.f * skin.margin * k) / (2.f * inset), (size.height + 2.f * skin.margin * k) / (2.f * inset)});
+    auto* ns = NineSlice::create(spriteName(file).c_str());
+    if (!ns) return nullptr;
+    ns->setInsets({inset, inset, inset, inset});
+    ns->setScaleMultiplier(k);
+    const float m = skin.margin * k;
+    ns->setContentSize({size.width + 2.f * m, size.height + 2.f * m});
+    ns->setAnchorPoint({.5f, .5f});
+    ns->setPosition({size.width / 2.f, size.height / 2.f});
+    return ns;
+}
+
+bool navyish(ccColor4F c) { return c.b >= c.r && c.b >= c.g && c.r < .3f && c.g < .3f; }
+bool tealish(ccColor4F c) { return c.g > .55f && c.r < .35f; }
+
+} // namespace
+
+CCSprite* icon(const std::string& name, float size, ccColor3B color) {
+    auto* s = CCSprite::create(spriteName(("icon_" + name + ".png").c_str()).c_str());
+    if (!s) return nullptr;
+    if (s->getContentSize().width > 0.f) s->setScale(size / s->getContentSize().width);
+    s->setColor(color);
+    return s;
+}
+
+CCNode* toastBackground(CCSize size) {
+    auto* node = sized(size);
+    if (auto* bg = skinned(kToastSkin, kToastSkin.file, size, 8.f)) {
+        node->addChild(bg, -1);
+        return node;
+    }
+    auto* draw = CCDrawNode::create();
+    auto pts = roundedRectPoints(size.width, size.height, 8.f);
+    draw->drawPolygon(pts.data(), static_cast<unsigned int>(pts.size()), rgba(14, 12, 30, .94f), 1.1f, rgba(kViolet, 1.f));
+    node->addChild(draw);
+    return node;
+}
+
+namespace {
+CCNode* drawnCard(CCSize size, float radius, ccColor4F fill, ccColor4F border, float borderWidth) {
     auto* node = sized(size);
     auto* draw = CCDrawNode::create();
     auto pts = roundedRectPoints(size.width, size.height, radius);
     draw->drawPolygon(pts.data(), static_cast<unsigned int>(pts.size()), fill, borderWidth, border);
     node->addChild(draw);
     return node;
+}
+} // namespace
+
+CCNode* card(CCSize size, float radius, ccColor4F fill, ccColor4F border, float borderWidth) {
+    // A faint halo behind a panel: the panel texture has its own glow.
+    if (fill.a < .2f && border.a < .06f) return sized(size);
+    // Dark navy surfaces use the textures; anything coloured (chips, tints) stays drawn.
+    if (fill.a >= .3f && navyish(fill)) {
+        const Skin* skin = &kCardSkin;
+        if (size.width >= 280.f && size.height >= 140.f && radius >= 12.f) skin = &kPanelSkin;
+        else if (tealish(border)) skin = &kFieldSkin;
+        if (auto* bg = skinned(*skin, skin->file, size, radius)) {
+            auto* node = sized(size);
+            if (skin == &kCardSkin && fill.a < .8f) bg->setOpacity(static_cast<GLubyte>(std::clamp(fill.a / .88f, 0.f, 1.f) * 255.f));
+            node->addChild(bg, -1);
+            return node;
+        }
+    }
+    return drawnCard(size, radius, fill, border, borderWidth);
 }
 
 CCNode* gradientPill(CCSize size, float radius, ccColor3B from, ccColor3B to, GLubyte opacity) {
@@ -165,10 +248,17 @@ void setTextIfChanged(CCLabelTTF* label, const std::string& s) {
 }
 
 CCMenuItemSpriteExtra* button(const std::string& caption, CCSize size, Style style, CCObject* target, SEL_MenuHandler sel,
-                              float fontSize) {
+                              float fontSize, const char* iconName) {
     CCNode* bg = nullptr;
     ccColor3B textColor = kText;
-    switch (style) {
+    // Textured pill first; the drawn one below only if the texture is missing.
+    const char* pillFile = style == Style::Primary ? "btn_primary.png" : style == Style::Secondary ? "btn_secondary.png"
+                         : style == Style::Danger ? "btn_danger.png" : "btn_ghost.png";
+    if (auto* skin = skinned(kPillSkin, pillFile, size, size.height / 2.f)) {
+        bg = sized(size);
+        bg->addChild(skin, -1);
+        if (style == Style::Ghost) textColor = kMuted;
+    } else switch (style) {
         case Style::Primary: bg = gradientPill(size, size.height / 2.f, kTeal, kViolet); break;
         case Style::Secondary: bg = card(size, size.height / 2.f, rgba(40, 46, 80, .9f), rgba(kViolet, .55f), .8f); break;
         case Style::Danger: bg = gradientPill(size, size.height / 2.f, {255, 70, 110}, {190, 50, 150}); break;
@@ -178,9 +268,17 @@ CCMenuItemSpriteExtra* button(const std::string& caption, CCSize size, Style sty
             break;
     }
     auto* label = text(caption, fontSize, textColor, 1);
-    const float maxW = size.width - 8.f;
+    CCSprite* ic = iconName ? icon(iconName, fontSize * 1.3f, textColor) : nullptr;
+    const float iconW = ic ? fontSize * 1.3f + 4.f : 0.f;
+    const float maxW = size.width - 8.f - iconW;
     if (label->getContentSize().width > maxW) label->setScale(maxW / label->getContentSize().width);
-    label->setPosition({size.width / 2.f, size.height / 2.f});
+    const float labelW = label->getContentSize().width * label->getScale();
+    const float left = size.width / 2.f - (labelW + iconW) / 2.f;
+    if (ic) {
+        ic->setPosition({left + fontSize * .65f, size.height / 2.f});
+        bg->addChild(ic);
+    }
+    label->setPosition({left + iconW + labelW / 2.f, size.height / 2.f});
     bg->addChild(label);
     auto* item = CCMenuItemSpriteExtra::create(bg, target, sel);
     item->m_scaleMultiplier = 1.06f;  // subtle press feedback for wide buttons

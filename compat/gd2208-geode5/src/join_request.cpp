@@ -47,14 +47,9 @@ private:
         // Warning box: a yellow triangle with "!" and the advice.
         auto* box = kit::card({kW - 30.f, 34.f}, 9.f, kit::rgba(60, 46, 10, .55f), kit::rgba(kit::kWarn, .8f), .8f);
         m_mainLayer->addChildAtPosition(box, Anchor::Center, {0.f, -10.f});
-        auto* tri = CCDrawNode::create();
-        CCPoint pts[3] = {{0.f, 0.f}, {16.f, 0.f}, {8.f, 14.f}};
-        tri->drawPolygon(pts, 3, kit::rgba(kit::kWarn, 1.f), 0.f, kit::rgba(kit::kWarn, 0.f));
-        tri->setContentSize({16.f, 14.f});
-        tri->setAnchorPoint({.5f, .5f});
-        m_mainLayer->addChildAtPosition(tri, Anchor::Center, {-kW / 2.f + 34.f, -10.f});
-        auto* bang = kit::text("!", 9.f, {40, 30, 0}, 1);
-        m_mainLayer->addChildAtPosition(bang, Anchor::Center, {-kW / 2.f + 34.f, -12.f});
+        if (auto* warnIcon = kit::icon("warning", 18.f, kit::kWarn)) {
+            m_mainLayer->addChildAtPosition(warnIcon, Anchor::Center, {-kW / 2.f + 32.f, -10.f});
+        }
         auto* warn = kit::wrappedText("Only accept people you know. Don't share your code with strangers.", 7.f, kW - 80.f, kit::kWarn);
         warn->setAnchorPoint({0.f, .5f});
         m_mainLayer->addChildAtPosition(warn, Anchor::Center, {-kW / 2.f + 48.f, -10.f});

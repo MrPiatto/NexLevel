@@ -138,17 +138,18 @@ void NexMenu::buildTab() {
     addText("Create Together. Build Beyond.  -  Forg3 Studios", 7.f, 23.f, H - 41.f, kit::kMuted);
     m_statusDot = add(CCDrawNode::create(), W - 128.f, H - 25.f);
     m_status = addText("", 8.f, W - 120.f, H - 25.f, kit::kMuted, 1);
-    addButton(kit::button("X", {20.f, 20.f}, kit::Style::Ghost, this, menu_selector(NexMenu::onClose2), 9.f), W - 24.f, H - 24.f);
+    addButton(kit::button("", {22.f, 22.f}, kit::Style::Ghost, this, menu_selector(NexMenu::onClose2), 9.f, "close"), W - 24.f, H - 24.f);
 
     // ---- tab bar ----
     const char* names[] = {"Room", "Players", "Chat", "History", "Network", "Settings"};
+    const char* icons[] = {"room", "players", "chat", "history", "network", "settings"};
     constexpr int kTabs = 6;
     const float tabW = 72.f, barW = tabW * kTabs + 8.f;
     add(kit::card({barW, 26.f}, 13.f, kit::rgba(30, 34, 64, .9f), kit::rgba(kit::kViolet, .25f), .6f), W / 2.f, H - 64.f);
     for (int i = 0; i < kTabs; ++i) {
         const bool sel = static_cast<int>(m_tab) == i;
         auto* b = kit::button(names[i], {tabW - 4.f, 20.f}, sel ? kit::Style::Primary : kit::Style::Ghost, this,
-                              menu_selector(NexMenu::onTab), 8.5f);
+                              menu_selector(NexMenu::onTab), 8.f, icons[i]);
         if (!sel) {  // ghost tabs: text only, no outline
             if (auto* bg = b->getNormalImage()) {
                 if (auto* children = bg->getChildren(); children && children->count() > 0) {
