@@ -474,6 +474,7 @@ void NexMenu::buildSettings() {
     add(kit::card({250.f, 18.f}, 7.f, kit::rgba(12, 14, 30, 1.f), kit::rgba(kit::kTeal, .4f), .6f), 32.f + 125.f, y - 22.f);
     m_relayInput = TextInput::create(240.f, "host or host:port (empty = official relays)", "chatFont.fnt");
     m_relayInput->hideBG();
+    m_relayInput->setTextAlign(TextInputAlign::Left);
     m_relayInput->setFilter("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:");
     m_relayInput->setMaxCharCount(64);
     m_relayInput->setString(Mod::get()->getSettingValue<std::string>("relay-server"));
@@ -655,7 +656,11 @@ void NexMenu::buildChat() {
         y -= 16.f;
     }
     add(kit::card({340.f, 24.f}, 8.f, kit::rgba(12, 14, 30, 1.f), kit::rgba(kit::kTeal, .45f), .7f), 16.f + 170.f, 26.f);
-    m_chatInput = TextInput::create(330.f, "Message...  (@Name to mention, /mute Name)", "chatFont.fnt");
+    // Bigger text, written from the left like a chat box (scaled up, so created narrower).
+    constexpr float kChatScale = 1.35f;
+    m_chatInput = TextInput::create(326.f / kChatScale, "Message...  (@Name to mention, /mute Name)", "chatFont.fnt");
+    m_chatInput->setScale(kChatScale);
+    m_chatInput->setTextAlign(TextInputAlign::Left);
     m_chatInput->hideBG();
     m_chatInput->setCommonFilter(CommonFilter::Any);
     m_chatInput->setMaxCharCount(static_cast<int>(session::kMaxChatLen));
