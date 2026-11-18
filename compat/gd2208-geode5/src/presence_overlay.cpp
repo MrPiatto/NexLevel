@@ -78,6 +78,7 @@ public:
                 m_trailLayer->addChild(v.draw, 0);
                 v.name = CCLabelBMFont::create(sm->peerName(peer).c_str(), "bigFont.fnt");
                 v.name->setColor(c);
+                v.name->setAnchorPoint({.5f, 0.f});
                 m_trailLayer->addChild(v.name, 2);
             }
             if (v.session != t.last.session || t.points1.size() < v.drawn1 || t.points2.size() < v.drawn2) {
@@ -88,8 +89,8 @@ public:
             auto drawNew = [&](const std::vector<std::pair<float, float>>& pts, std::size_t& drawn) {
                 for (std::size_t i = std::max<std::size_t>(drawn, 1); i < pts.size(); ++i) {
                     CCPoint a{pts[i - 1].first, pts[i - 1].second}, b{pts[i].first, pts[i].second};
-                    v.draw->drawSegment(a, b, 3.f, ccColor4F{c.r / 255.f, c.g / 255.f, c.b / 255.f, .22f});  // glow
-                    v.draw->drawSegment(a, b, 1.2f, ccColor4F{c.r / 255.f, c.g / 255.f, c.b / 255.f, .95f});
+                    // Same look as GD's own playtest path, in the player's colour.
+                    v.draw->drawSegment(a, b, 1.f, ccColor4F{c.r / 255.f, c.g / 255.f, c.b / 255.f, 1.f});
                 }
                 drawn = std::max(drawn, pts.size());
             };
@@ -134,9 +135,11 @@ public:
                       t.last.flags & PS::UpsideDown1);
             placeIcon(v.icon2, v.mode2, v.icon2Id, live && (t.last.flags & PS::Dual), t.last.mode2, t.last.icon2, t.last.x2, t.last.y2,
                       t.last.rot2, t.last.scale2, t.last.flags & PS::UpsideDown2);
+            // Small name just above the icon's head.
             v.name->setVisible(live);
-            v.name->setScale(.4f / myZoom);
-            v.name->setPosition({t.last.x1, t.last.y1 + 24.f});
+            v.name->setScale(.28f / myZoom);
+            const float iconScale = t.last.scale1 > 0.05f ? t.last.scale1 : 1.f;
+            v.name->setPosition({t.last.x1, t.last.y1 + 17.f * iconScale + 2.f / myZoom});
         }
         // "Look here" markers: a pulsing ring in the player's colour, with their name.
         const auto nowM = std::chrono::steady_clock::now();
@@ -174,7 +177,14 @@ public:
         m_draw->clear();
         std::map<sync::PeerId, bool> seen;
         const auto win = CCDirector::sharedDirector()->getWinSize();
+        const auto& trails = sm->playTrails();
+        const auto now = std::chrono::steady_clock::now();
         for (auto& p : list) {
+            // A player who is playtesting isn't looking at the editor: no frame until they stop.
+            if (auto t = trails.find(p.peer); t != trails.end() && t->second.last.playing() &&
+                                              now - t->second.updated < std::chrono::milliseconds(1500)) {
+                continue;
+            }
             seen[p.peer] = true;
             auto& s = m_shown[p.peer];
             if (!s.init) { s = {p.x, p.y, p.zoom, true}; }
@@ -223,23 +233,55 @@ private:
 
 } // namespace
 
-void updatePresence(LevelEditorLayer* layer, bool paused, bool linked) {
-    if (!layer || !layer->m_objectLayer) return;
-    auto* sm = SessionManager::get();
-    auto* objectLayer = layer->m_objectLayer;
-    // Exactly one overlay per editor: find it by type (and drop any duplicate, whose frames and
-    // names would otherwise stay frozen on screen).
+namespace {
+
+// Puts `node` (a child of `parent`) exactly over `objectLayer`: same origin, zoom and rotation, so
+// it can draw in level coordinates without being inside the level.
+void matchTransform(CCNode* node, CCNode* parent, CCNode* objectLayer) {
+    const auto o = parent->convertToNodeSpace(objectLayer->convertToWorldSpace({0.f, 0.f}));
+    const auto ax = parent->convertToNodeSpace(objectLayer->convertToWorldSpace({100.f, 0.f}));
+    const auto ay = parent->convertToNodeSpace(objectLayer->convertToWorldSpace({0.f, 100.f}));
+    const CCPoint vx = ax - o, vy = ay - o;
+    const float sx = std::sqrt(vx.x * vx.x + vx.y * vx.y) / 100.f;
+    const float sy = std::sqrt(vy.x * vy.x + vy.y * vy.y) / 100.f;
+    const bool flipped = vx.x * vy.y - vx.y * vy.x < 0.f;
+    node->setAnchorPoint({0.f, 0.f});
+    node->setPosition(o);
+    node->setScaleX(sx);
+    node->setScaleY(flipped ? -sy : sy);
+    node->setRotation(-std::atan2(vx.y, vx.x) * 57.29578f);
+}
+
+// Exactly one overlay: find it by type under `parent` (and drop duplicates, whose frames and names
+// would otherwise stay frozen on screen).
+PresenceOverlay* findOverlay(CCNode* parent, bool keep) {
     PresenceOverlay* overlay = nullptr;
-    if (auto* children = objectLayer->getChildren()) {
+    if (!parent) return nullptr;
+    if (auto* children = parent->getChildren()) {
         std::vector<PresenceOverlay*> found;
         for (auto* child : CCArrayExt<CCNode*>(children)) {
             if (auto* o = typeinfo_cast<PresenceOverlay*>(child)) found.push_back(o);
         }
         for (std::size_t i = 0; i < found.size(); ++i) {
-            if (i == 0) overlay = found[i];
+            if (i == 0 && keep) overlay = found[i];
             else found[i]->removeFromParent();
         }
     }
+    return overlay;
+}
+
+} // namespace
+
+void updatePresence(LevelEditorLayer* layer, bool paused, bool linked) {
+    if (!layer || !layer->m_objectLayer) return;
+    auto* sm = SessionManager::get();
+    auto* objectLayer = layer->m_objectLayer;
+    // The overlay lives under the editor UI (below its buttons), not inside the level: camera and
+    // shader effects (bulge, shockwave...) render the level into a texture and would distort and
+    // repeat anything drawn in it.
+    CCNode* parent = layer->m_editorUI ? static_cast<CCNode*>(layer->m_editorUI) : static_cast<CCNode*>(layer);
+    findOverlay(objectLayer, false);  // older versions drew inside the level
+    PresenceOverlay* overlay = findOverlay(parent, true);
     if (!sm->inSession() || !linked) {
         if (overlay) overlay->removeFromParent();
         return;
@@ -257,11 +299,12 @@ void updatePresence(LevelEditorLayer* layer, bool paused, bool linked) {
         if (!overlay) return;
         overlay->setTag(kOverlayTag);
         overlay->setID("presence-overlay"_spr);
-        objectLayer->addChild(overlay, 10000);
+        parent->addChild(overlay, -1000);
     }
     // While this player is playtesting the overlay is hidden; everyone else's view keeps updating.
     overlay->setVisible(!paused);
     if (paused) return;
+    matchTransform(overlay, parent, objectLayer);
     const float z = zoom > 0.01f ? zoom : 1.f;
     overlay->showFrames(showFrames);
     overlay->showTrails(showTrails);

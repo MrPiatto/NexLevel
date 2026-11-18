@@ -1,4 +1,5 @@
 #include "session_manager.hpp"
+#include "toast.hpp"
 
 #include "discord_presence.hpp"
 #include "hosting_badge.hpp"
@@ -20,13 +21,14 @@ using namespace geode::prelude;
 namespace nexlevel::mod {
 
 void notify(const std::string& text, NotificationIcon icon) {
-    log::info("NexLevel notice: {}", text);
-    // Shown on the next frame, and only if there is a scene: notices can be triggered while
-    // cocos2d tears the editor down (e.g. quitting the game), where showing one crashes.
-    geode::queueInMainThread([text, icon] {
-        if (!CCDirector::sharedDirector()->getRunningScene()) return;
-        Notification::create(text, icon)->show();
-    });
+    ToastKind kind = ToastKind::Info;
+    switch (icon) {
+        case NotificationIcon::Success: kind = ToastKind::Success; break;
+        case NotificationIcon::Warning: kind = ToastKind::Warning; break;
+        case NotificationIcon::Error: kind = ToastKind::Error; break;
+        default: break;
+    }
+    toast(text, "", kind);
 }
 
 SessionManager* SessionManager::get() {
@@ -490,6 +492,15 @@ std::optional<sync::NetId> SessionManager::newId() {
 
 void SessionManager::submitLocal(sync::Op op) {
     m_roomDirty = true;
+    const auto now = std::chrono::steady_clock::now();
+    if (op.kind == sync::OpKind::Delete) {
+        ++m_eraseBurst;
+        m_lastErase = now;
+    } else if (op.kind == sync::OpKind::SetProps && sync::isLevelSettings(op.target) &&
+               now - m_lastSettingsAlert > std::chrono::seconds(15)) {
+        m_lastSettingsAlert = now;
+        sendAlert(session::AlertKind::SettingsChanged);
+    }
     if (m_host) m_host->submitLocal(std::move(op));
     else if (m_client) m_client->submitLocal(std::move(op));
 }

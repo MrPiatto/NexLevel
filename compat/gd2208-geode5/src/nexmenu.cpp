@@ -838,6 +838,7 @@ class $modify(NLEditorPauseLayer, EditorPauseLayer) {
         auto* sm = nexlevel::mod::SessionManager::get();
         if (m_editorLayer && sm->saveLocked(m_editorLayer->m_level)) {
             nexlevel::mod::notify("Only the host saves this level", NotificationIcon::Info);
+            sm->sendAlert(nexlevel::session::AlertKind::CopyAttempt);
             return;
         }
         EditorPauseLayer::saveLevel();

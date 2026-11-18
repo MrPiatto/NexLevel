@@ -60,6 +60,7 @@ struct SessionHost::Impl {
         Clock::time_point opRefill = Clock::now();
         Clock::time_point lastChat{};
         Clock::time_point lastMarker{};
+        Clock::time_point lastAlert{};
     };
     struct Identity {  // survives the connection, for reconnects
         sync::PeerId id = 0;
@@ -334,6 +335,13 @@ struct SessionHost::Impl {
     bool settingsLocked = false;             // only the host may change the level settings
     std::vector<ChatMessage> chatInbox;
     std::vector<Marker> markerInbox;
+    std::vector<Alert> alertInbox;
+    void broadcastAlert(const Alert& a, std::uint32_t exceptConn) {
+        auto payload = encode(a);
+        for (auto& [conn, p] : peers) {
+            if (p.joined && conn != exceptConn) sendTo(conn, MsgType::Alert, payload);
+        }
+    }
     void broadcastMarker(const Marker& mk, std::uint32_t exceptConn) {
         auto payload = encode(mk);
         for (auto& [conn, p] : peers) {
@@ -538,6 +546,17 @@ struct SessionHost::Impl {
             mk->peer = p.id;
             markerInbox.push_back(*mk);
             broadcastMarker(*mk, conn);
+            return;
+        }
+        if (static_cast<MsgType>(f.type) == MsgType::Alert) {
+            auto a = decodeAlert(f.payload);
+            if (!a) return;
+            const auto now = Clock::now();
+            if (now - p.lastAlert < std::chrono::milliseconds(1500)) return;  // anti-spam
+            p.lastAlert = now;
+            a->peer = p.id;  // identity comes from the connection
+            alertInbox.push_back(*a);
+            broadcastAlert(*a, conn);
             return;
         }
         if (static_cast<MsgType>(f.type) == MsgType::Chat) {
@@ -807,6 +826,10 @@ void SessionHost::sendMarker(float x, float y) {
     m->broadcastMarker(mk, 0);
 }
 std::vector<Marker> SessionHost::takeMarkers() { return std::exchange(m->markerInbox, {}); }
+void SessionHost::sendAlert(AlertKind kind, std::uint32_t count, sync::PeerId subject) {
+    m->broadcastAlert(Alert{kHostPeer, kind, count, subject}, 0);
+}
+std::vector<Alert> SessionHost::takeAlerts() { return std::exchange(m->alertInbox, {}); }
 
 bool SessionHost::kick(sync::PeerId peer) {
     for (auto it = m->peers.begin(); it != m->peers.end(); ++it) {

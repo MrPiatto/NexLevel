@@ -76,6 +76,9 @@ public:
     std::vector<ChatMessage> takeChat();
     void sendMarker(float x, float y);
     std::vector<Marker> takeMarkers();
+    // Risky-action alerts: send one about this player (the others are told); take the others'.
+    void sendAlert(AlertKind kind, std::uint32_t count, sync::PeerId subject = 0);
+    std::vector<Alert> takeAlerts();
 
     ClientState state() const noexcept;
     const std::string& lastError() const noexcept;

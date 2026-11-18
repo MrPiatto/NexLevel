@@ -6,6 +6,7 @@
 // so deletion is confirmed at end of frame and undo/redo is caught at LevelEditorLayer::handleAction.
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CustomizeObjectLayer.hpp>
+#include <Geode/modify/DrawGridLayer.hpp>
 #include <Geode/modify/EditorUI.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/LevelEditorLayer.hpp>
@@ -17,6 +18,7 @@
 #include "ping_hud.hpp"
 #include "presence_overlay.hpp"
 #include "session_manager.hpp"
+#include "ui_common.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -509,8 +511,20 @@ public:
 
     void applyRemote(const std::vector<nls::NetId>& ids) override {
         auto* view = SessionManager::get()->view();
-        if (!view || m_paused) {
+        if (!view) {
             for (auto id : ids) m_deferred.insert(id);
+            return;
+        }
+        if (m_paused) {
+            // Playtesting: new objects from the others appear right away, so the player can test
+            // what was just built. Changes to existing objects wait until the test ends (GD is
+            // moving and colliding with them; replacing one mid-test is not safe).
+            RemoteScope scope(*this);
+            for (auto id : ids) {
+                const auto* state = nls::isLevelSettings(id) ? nullptr : view->find(id);
+                if (m_playtesting && state && !m_idToObj.contains(id)) spawn(id, state->props);
+                else m_deferred.insert(id);
+            }
             return;
         }
         RemoteScope scope(*this);
@@ -857,6 +871,15 @@ class $modify(NLEditorUI, EditorUI) {
         EditorUI::onDeleteSelected(sender);
     }
 
+    // Copying a big part of the room is worth telling everyone about.
+    void onCopy(CCObject* sender) {
+        EditorUI::onCopy(sender);
+        if (!g_tracker || !SessionManager::get()->isAttached(g_tracker)) return;
+        auto* selected = getSelectedObjects();
+        const unsigned n = selected ? selected->count() : 0;
+        if (n >= 100) SessionManager::get()->sendAlert(nexlevel::session::AlertKind::CopyAttempt, n);
+    }
+
     void moveObject(GameObject* object, CCPoint offset) {
         if (g_tracker) g_tracker->snapshotIfUnknown(object);
         EditorUI::moveObject(object, offset);
@@ -946,6 +969,30 @@ class $modify(NLLevelEditorLayer, LevelEditorLayer) {
             g_tracker->setPaused(false);
             g_tracker->resyncSilently();
         }
+    }
+};
+
+// GD's own playtest path (the line left where the player went) in this player's room colour, the same
+// colour the others see it in. Drawn over GD's line, in the same space (the grid layer's draw).
+class $modify(NLDrawGridLayer, DrawGridLayer) {
+    void draw() {
+        DrawGridLayer::draw();
+        auto* layer = m_editorLayer;
+        if (!g_tracker || !layer || static_cast<LevelEditorLayer*>(g_tracker->layer()) != layer) return;
+        auto* sm = SessionManager::get();
+        if (!sm->isAttached(g_tracker)) return;
+        auto self = sm->selfId();
+        if (!self) return;
+        const auto c = nexlevel::mod::ui::peerColor(*self);
+        ccDrawColor4B(c.r, c.g, c.b, 255);
+        glLineWidth(3.f);
+        auto drawPath = [](const auto& pts) {
+            if (pts.size() < 2) return;
+            ccDrawPoly(pts.data(), static_cast<unsigned>(pts.size()), false);
+        };
+        drawPath(layer->m_playerPoints);
+        for (const auto& part : layer->m_player2Points) drawPath(part);
+        glLineWidth(1.f);
     }
 };
 

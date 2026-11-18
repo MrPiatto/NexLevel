@@ -111,7 +111,16 @@ public:
     void sendChat(const std::string& text);
     const std::deque<ChatLine>& chatLog() const { return m_chatLog; }
     std::size_t chatCount() const { return m_chatTotal; }
-    void setChatOpen(bool open) { m_chatOpen = open; }
+    void setChatOpen(bool open) {
+        m_chatOpen = open;
+        if (open) m_chatUnread = 0;
+    }
+    std::size_t chatUnread() const { return m_chatUnread; }
+
+    // Risky-action alerts, shown to everyone else in the room (mass delete, copy attempts, level
+    // settings changes, undoing a player's work). Mass deletes and settings changes are noticed
+    // from this player's own ops (submitLocal); the others are sent where they happen.
+    void sendAlert(session::AlertKind kind, std::uint32_t count = 0, sync::PeerId subject = 0);
 
     // Players can't save someone else's room: locked for the level open in a player's editor while in
     // the room and until that editor closes (GD's Save does nothing, the original level stays as it was).
@@ -171,6 +180,11 @@ private:
     void autosaveTick();
     void featuresTick();
     std::deque<ChatLine> m_chatLog;
+    std::size_t m_chatUnread = 0;
+    std::size_t m_eraseBurst = 0;
+    std::chrono::steady_clock::time_point m_lastErase{};
+    std::chrono::steady_clock::time_point m_lastSettingsAlert{};
+    void alertsTick();
     bool m_public = false;
     float m_localX = 0, m_localY = 0;
     std::vector<MarkerShown> m_markers;

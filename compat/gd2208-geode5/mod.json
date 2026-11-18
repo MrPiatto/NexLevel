@@ -53,6 +53,19 @@
 			"description": "Where NexLevel downloads the list of official relays. Leave as is unless you run your own network.",
 			"default": ""
 		},
+		"toast-sound": {
+			"type": "bool",
+			"name": "Notification sound",
+			"description": "Plays a soft sound with NexLevel notifications (chat, players joining, warnings).",
+			"default": true
+		},
+		"chat-key": {
+			"type": "string",
+			"name": "Chat key",
+			"description": "Key that opens the room chat in the editor (one letter, e.g. T).",
+			"default": "T",
+			"filter": "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		},
 		"show-trails": {
 			"type": "bool",
 			"name": "Show playtests",

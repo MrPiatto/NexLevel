@@ -151,6 +151,12 @@ CCLabelTTF* text(const std::string& s, float size, ccColor3B color, int weight) 
     return l;
 }
 
+CCLabelTTF* wrappedText(const std::string& s, float size, float width, ccColor3B color) {
+    auto* l = CCLabelTTF::create(s.c_str(), kFontRegular, size, CCSize{width, 0.f}, kCCTextAlignmentLeft);
+    l->setColor(color);
+    return l;
+}
+
 void setTextIfChanged(CCLabelTTF* label, const std::string& s) {
     if (!label) return;
     const char* cur = label->getString();

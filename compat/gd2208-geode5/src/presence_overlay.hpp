@@ -1,6 +1,6 @@
 #pragma once
 // Shows where the other players are looking: a coloured frame of their view with their name,
-// drawn inside the editor's object layer so it moves and zooms with the level.
+// drawn over the level (matching its position and zoom) but outside it, so camera effects leave it alone.
 #include <Geode/Geode.hpp>
 
 namespace nexlevel::mod {

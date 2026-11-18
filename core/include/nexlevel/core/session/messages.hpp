@@ -33,7 +33,9 @@ enum class MsgType : std::uint16_t {
     PlayerState = 18,     // either way: a player's icon while they playtest (spectating + trail)
     SnapshotChunkZ = 21,
     Chat = 22,            // client -> host: a chat line; host -> others: who said it + the line
-    Marker = 23,          // either way: "look here" at a level position (relayed by the host)  // host -> joining client: SnapshotChunk, compressed (u32 raw size + LZ block)
+    Marker = 23,          // either way: "look here" at a level position (relayed by the host)
+    Alert = 24,           // either way: a risky action someone did (mass delete, copy attempt...), shown to everyone
+     // host -> joining client: SnapshotChunk, compressed (u32 raw size + LZ block)
     Sealed = 20,       // encrypted envelope around any of the above (see crypto/secure_channel.hpp)
 };
 
@@ -89,6 +91,14 @@ struct ChatMessage {
 struct Marker {
     sync::PeerId peer = 0;  // filled in by the host
     float x = 0, y = 0;
+};
+// Risky actions everyone is told about. `count`: objects involved; `subject`: the player it was done to.
+enum class AlertKind : std::uint8_t { MassDelete = 1, CopyAttempt = 2, SettingsChanged = 3, UndoPlayer = 4, ViewOnly = 5 };
+struct Alert {
+    sync::PeerId peer = 0;  // who did it; filled in by the host for clients
+    AlertKind kind = AlertKind::MassDelete;
+    std::uint32_t count = 0;
+    sync::PeerId subject = 0;
 };
 struct Rejected {
     std::uint32_t clientSeq = 0;
@@ -172,6 +182,8 @@ std::vector<std::uint8_t> encode(const ChatMessage& m);
 std::vector<std::uint8_t> encode(const Marker& m);
 std::optional<Marker> decodeMarker(std::span<const std::uint8_t> p);
 std::optional<ChatMessage> decodeChat(std::span<const std::uint8_t> p);
+std::vector<std::uint8_t> encode(const Alert& m);
+std::optional<Alert> decodeAlert(std::span<const std::uint8_t> p);
 // Chat text as shown: printable characters only, trimmed, at most kMaxChatLen.
 std::string cleanChatText(std::string_view text);
 std::optional<Roster> decodeRoster(std::span<const std::uint8_t> p);

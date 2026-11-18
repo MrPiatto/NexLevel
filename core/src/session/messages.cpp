@@ -385,6 +385,25 @@ std::optional<ChatMessage> decodeChat(std::span<const std::uint8_t> p) {
     if (m.text.empty()) return std::nullopt;
     return m;
 }
+std::vector<std::uint8_t> encode(const Alert& m) {
+    ByteWriter w;
+    w.u16(m.peer);
+    w.u8(static_cast<std::uint8_t>(m.kind));
+    w.u32(m.count);
+    w.u16(m.subject);
+    return w.take();
+}
+std::optional<Alert> decodeAlert(std::span<const std::uint8_t> p) {
+    ByteReader r(p);
+    Alert m;
+    m.peer = r.u16();
+    const auto kind = r.u8();
+    m.count = r.u32();
+    m.subject = r.u16();
+    if (!r.ok() || !r.atEnd() || kind < 1 || kind > 5) return std::nullopt;
+    m.kind = static_cast<AlertKind>(kind);
+    return m;
+}
 std::optional<Roster> decodeRoster(std::span<const std::uint8_t> p) {
     ByteReader r(p);
     Roster m;

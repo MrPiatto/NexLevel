@@ -35,6 +35,8 @@ cocos2d::CCNode* gradientPill(cocos2d::CCSize size, float radius, cocos2d::ccCol
 
 // Modern text (system UI font). weight: 0 regular, 1 semibold.
 cocos2d::CCLabelTTF* text(const std::string& s, float size, cocos2d::ccColor3B color = kText, int weight = 0);
+// Same, wrapped to `width` (lines break at spaces).
+cocos2d::CCLabelTTF* wrappedText(const std::string& s, float size, float width, cocos2d::ccColor3B color = kText);
 
 enum class Style { Primary, Secondary, Danger, Ghost };
 // A button: rounded, gradient for Primary. Tag/userObject are free for the caller.

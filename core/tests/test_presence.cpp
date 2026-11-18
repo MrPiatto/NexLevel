@@ -138,6 +138,27 @@ void testChatAndViewOnly() {
     }, 3000));
     CHECK(!bm.empty() && bm[0].peer == *a.peerId() && bm[0].x == 120.f);
 
+    // Alerts: A's mass delete reaches the host and B with A's real id (the sender isn't echoed);
+    // the host's own alert reaches everyone; a second one right away is dropped (anti-spam).
+    a.sendAlert(AlertKind::MassDelete, 150);
+    a.sendAlert(AlertKind::MassDelete, 999);
+    host.sendAlert(AlertKind::UndoPlayer, 7, *a.peerId());
+    std::vector<Alert> ha, aa, ba;
+    CHECK(waitFor(pumpAll, [&] {
+        for (auto& x : host.takeAlerts()) ha.push_back(x);
+        for (auto& x : a.takeAlerts()) aa.push_back(x);
+        for (auto& x : b.takeAlerts()) ba.push_back(x);
+        return ha.size() >= 1 && aa.size() >= 1 && ba.size() >= 2;
+    }, 3000));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    pumpAll();
+    for (auto& x : host.takeAlerts()) ha.push_back(x);
+    for (auto& x : b.takeAlerts()) ba.push_back(x);
+    CHECK(ha.size() == 1 && ha[0].peer == *a.peerId() && ha[0].kind == AlertKind::MassDelete && ha[0].count == 150);
+    CHECK(aa.size() == 1 && aa[0].kind == AlertKind::UndoPlayer && aa[0].subject == *a.peerId() && aa[0].count == 7);
+    CHECK(ba.size() == 2);
+    CHECK(!decodeAlert(std::vector<std::uint8_t>{1, 0, 9, 0, 0, 0, 0, 0, 0}).has_value());  // unknown kind
+
     // Ban: B is removed and cannot come back; max players refuses extra players.
     const auto bId = *b.peerId();
     CHECK(host.ban(bId));

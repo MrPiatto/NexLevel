@@ -67,6 +67,7 @@ struct SessionClient::Impl {
     std::map<sync::PeerId, Presence> presences;
     std::vector<ChatMessage> chatInbox;
     std::vector<Marker> markerInbox;
+    std::vector<Alert> alertInbox;
     RttTracker rtt;
     std::map<sync::PeerId, std::uint16_t> pingTable;
     std::map<sync::PeerId, PlayTrail> trails;
@@ -441,6 +442,8 @@ std::vector<sync::NetId> SessionClient::pump() {
                     }
                 } else if (type == MsgType::Marker) {
                     if (auto mk = decodeMarker(e.frame.payload)) m->markerInbox.push_back(*mk);
+                } else if (type == MsgType::Alert) {
+                    if (auto a = decodeAlert(e.frame.payload)) m->alertInbox.push_back(*a);
                 } else if (type == MsgType::Chat) {
                     if (auto msg = decodeChat(e.frame.payload)) m->chatInbox.push_back(std::move(*msg));
                 } else if (type == MsgType::Kicked) {
@@ -518,6 +521,11 @@ void SessionClient::sendMarker(float x, float y) {
     m->send(MsgType::Marker, encode(Marker{0, x, y}));
 }
 std::vector<Marker> SessionClient::takeMarkers() { return std::exchange(m->markerInbox, {}); }
+void SessionClient::sendAlert(AlertKind kind, std::uint32_t count, sync::PeerId subject) {
+    if (m->state != ClientState::Joined) return;
+    m->send(MsgType::Alert, encode(Alert{0, kind, count, subject}));
+}
+std::vector<Alert> SessionClient::takeAlerts() { return std::exchange(m->alertInbox, {}); }
 
 std::vector<Presence> SessionClient::presences() const {
     std::vector<Presence> out;

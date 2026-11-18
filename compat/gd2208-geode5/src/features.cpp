@@ -1,5 +1,6 @@
 // Collaboration extras: room chat, view-only players and the "GD closed during a room" report prompt.
 #include "session_manager.hpp"
+#include "toast.hpp"
 #include "relay_directory.hpp"
 
 #include <Geode/modify/MenuLayer.hpp>
@@ -21,6 +22,7 @@ namespace nexlevel::mod {
 namespace {
 
 constexpr std::size_t kChatKeep = 60;
+constexpr std::size_t kMassDeleteAlert = 100;  // deletes in one go that everyone is told about
 bool g_markerOn = false;
 
 // Present while this game is in a room; removed when the room ends normally or GD saves on exit.
@@ -125,6 +127,7 @@ std::size_t SessionManager::undoPlayer(sync::PeerId peer) {
     for (auto id : ids) m_host->submitLocal(sync::Op::erase(id));
     if (m_editor && !ids.empty()) m_editor->applyRemote(ids);  // the host's own editor follows
     m_roomDirty = true;
+    if (!ids.empty()) sendAlert(session::AlertKind::UndoPlayer, static_cast<std::uint32_t>(ids.size()), peer);
     return ids.size();
 }
 
@@ -211,9 +214,7 @@ void SessionManager::featuresTick() {
     const auto nowT = std::chrono::steady_clock::now();
     for (auto& mk : incoming) {
         m_markers.push_back({mk.peer, mk.x, mk.y, nowT});
-        std::string plain;
-        for (char c : peerName(mk.peer)) plain += static_cast<unsigned char>(c) < 128 ? c : '?';
-        notify(plain + " marked a spot - look for the circle", NotificationIcon::Info);
+        toast(peerName(mk.peer), "marked a spot - look for the circle", ToastKind::Info);
     }
     std::erase_if(m_markers, [&](auto& m) { return nowT - m.at > std::chrono::seconds(8); });
 
@@ -227,6 +228,8 @@ void SessionManager::featuresTick() {
                                                       displayName(), level));
     }
 
+    alertsTick();
+
     // Chat.
     std::vector<session::ChatMessage> lines;
     if (m_host) lines = m_host->takeChat();
@@ -235,10 +238,8 @@ void SessionManager::featuresTick() {
     for (auto& l : lines) {
         ChatLine line{l.peer, peerName(l.peer), l.text};
         if (!m_chatOpen && (!self || l.peer != *self)) {
-            // Notices use GD's bitmap font: keep plain ASCII there (the Chat tab shows the full text).
-            std::string plain;
-            for (char c : line.name + ": " + line.text) plain += static_cast<unsigned char>(c) < 128 ? c : '?';
-            notify(plain, NotificationIcon::None);
+            ++m_chatUnread;
+            toast(line.name, line.text, ToastKind::Chat);
         }
         m_chatLog.push_back(std::move(line));
         ++m_chatTotal;
@@ -257,6 +258,45 @@ void SessionManager::featuresTick() {
 }
 
 void clearSessionMarker() { setMarker(false); }
+
+// ---------------------------------------------------------------- alerts
+void SessionManager::sendAlert(session::AlertKind kind, std::uint32_t count, sync::PeerId subject) {
+    if (m_host) m_host->sendAlert(kind, count, subject);
+    else if (m_client) m_client->sendAlert(kind, count, subject);
+}
+
+void SessionManager::alertsTick() {
+    // A burst of deletes (one gesture, a Delete All...) ends when none came for a moment.
+    const auto now = std::chrono::steady_clock::now();
+    if (m_eraseBurst > 0 && now - m_lastErase > std::chrono::milliseconds(700)) {
+        if (m_eraseBurst >= kMassDeleteAlert) sendAlert(session::AlertKind::MassDelete, static_cast<std::uint32_t>(m_eraseBurst));
+        m_eraseBurst = 0;
+    }
+    std::vector<session::Alert> alerts;
+    if (m_host) alerts = m_host->takeAlerts();
+    else if (m_client) alerts = m_client->takeAlerts();
+    for (const auto& a : alerts) {
+        const auto who = peerName(a.peer);
+        const auto n = std::to_string(a.count);
+        switch (a.kind) {
+            case session::AlertKind::MassDelete:
+                toast("Mass delete", who + " deleted " + n + " objects", ToastKind::Warning);
+                break;
+            case session::AlertKind::CopyAttempt:
+                toast("Copy attempt", a.count ? who + " copied " + n + " objects" : who + " tried to save a copy of the level",
+                      ToastKind::Warning);
+                break;
+            case session::AlertKind::SettingsChanged:
+                toast("Level settings", who + " changed the level settings", ToastKind::Warning);
+                break;
+            case session::AlertKind::UndoPlayer:
+                toast("Work removed", who + " removed " + peerName(a.subject) + "'s work (" + n + " objects)", ToastKind::Warning);
+                break;
+            case session::AlertKind::ViewOnly:
+                break;
+        }
+    }
+}
 
 } // namespace nexlevel::mod
 
