@@ -61,6 +61,25 @@ pill('btn_danger', '#ff4468', '#b8309a')
 pill('btn_ghost', '#000000', '#000000', alpha=0, border='#aab0d8', borderA=.45, gloss=False, shadow=False)
 pill('btn_good', '#16c79a', '#0f9d8c')
 
+# ---- buttons: slanted like the NexLevel logo (replaces the round pills above) ----
+# Option A: slanted like the logo (parallelogram), 72x40 texture, shape 64x32, skew 7
+def slant(name, fill, stroke, strokeA=1, glow=False, fillA=1):
+    w,h,m,k=72,40,4,7
+    pts=f'{m+k},{m} {w-m},{m} {w-m-k},{h-m} {m},{h-m}'
+    defs=f'''<linearGradient id="f" x1="0" y1="0" x2="1" y2="1">{fill}</linearGradient>
+<linearGradient id="gl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<filter id="b" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.6"/></filter>'''
+    body=''
+    if glow: body+=f'<polygon points="{pts}" fill="none" stroke="{stroke}" stroke-width="2.2" opacity=".6" filter="url(#b)"/>'
+    body+=f'<polygon points="{pts}" fill="url(#f)" fill-opacity="{fillA}" stroke-linejoin="round"/>'
+    body+=f'<polygon points="{pts}" fill="url(#gl)"/>'
+    body+=f'<polygon points="{pts}" fill="none" stroke="{stroke}" stroke-width="1.1" stroke-opacity="{strokeA}" stroke-linejoin="round"/>'
+    render(name,w,h,body,defs)
+slant('btn_primary','<stop offset="0" stop-color="#7b3cff"/><stop offset="1" stop-color="#c43cff"/>','#e0c8ff',.9,True)
+slant('btn_secondary','<stop offset="0" stop-color="#0d0b18"/><stop offset="1" stop-color="#0d0b18"/>','#9b4dff',1,True)
+slant('btn_danger','<stop offset="0" stop-color="#ff3d6e"/><stop offset="1" stop-color="#b8309a"/>','#ffc0d0',.8,True)
+slant('btn_ghost','<stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#000"/>','#9aa0c8',.6,False,0)
+
 # ---- icons: white on transparent, 16x16 pt, tinted in game ----
 I = {
  'room': '<path d="M3 8.2 8 4l5 4.2V13a.8.8 0 0 1-.8.8H9.6V10H6.4v3.8H3.8A.8.8 0 0 1 3 13z" fill="#fff"/>',

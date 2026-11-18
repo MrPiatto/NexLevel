@@ -285,6 +285,15 @@ CCMenuItemSpriteExtra* button(const std::string& caption, CCSize size, Style sty
     return item;
 }
 
+CCNode* buttonBackground(CCSize size, Style style) {
+    const char* file = style == Style::Primary ? "btn_primary.png" : style == Style::Secondary ? "btn_secondary.png"
+                     : style == Style::Danger ? "btn_danger.png" : "btn_ghost.png";
+    auto* node = sized(size);
+    if (auto* skin = skinned(kPillSkin, file, size, size.height / 2.f)) node->addChild(skin, -1);
+    else return card(size, size.height / 2.f, rgba(30, 34, 64, .9f), rgba(kViolet, .25f), .6f);
+    return node;
+}
+
 CCNode* chip(const std::string& caption, ccColor3B color, float fontSize) {
     auto* label = text(caption, fontSize, color, 1);
     const CCSize size{label->getContentSize().width + 10.f, fontSize + 6.f};

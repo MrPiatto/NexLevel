@@ -1,5 +1,5 @@
 # v1.0.7
-- **New look:** every NexLevel panel, card, button and notification is redrawn with real high-resolution textures (soft violet glow, glossy buttons, smooth corners) and icons on the tabs, notifications and warnings.
+- **New look:** every NexLevel panel, card, button and notification is redrawn with real high-resolution textures (soft violet glow, slanted buttons like the NexLevel logo, smooth corners), the logo in the menu header, and icons on the tabs, notifications and warnings.
 - **History tab:** who placed, deleted and edited what, with the time, a line every few seconds.
 - **Restore points (host):** a copy of the room every 5 minutes, kept in NexLevel's own folder (not in My Levels). In the History tab, "Open" turns one into a new level in My Levels.
 - **Bans are kept:** banned players stay banned in all your rooms. "Bans" in the Players tab lists them, with Unban.

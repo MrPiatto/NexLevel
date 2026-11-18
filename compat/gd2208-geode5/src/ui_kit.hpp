@@ -43,6 +43,8 @@ enum class Style { Primary, Secondary, Danger, Ghost };
 // iconName: one of resources/icon_*.png without prefix/extension ("chat", "players"...), shown before the text.
 CCMenuItemSpriteExtra* button(const std::string& caption, cocos2d::CCSize size, Style style, cocos2d::CCObject* target,
                               cocos2d::SEL_MenuHandler sel, float fontSize = 9.f, const char* iconName = nullptr);
+// Just the background of a button of that style (e.g. behind the menu's tab bar).
+cocos2d::CCNode* buttonBackground(cocos2d::CCSize size, Style style);
 // White icon from resources/icon_<name>.png, tinted, `size` points wide (nullptr if missing).
 cocos2d::CCSprite* icon(const std::string& name, float size, cocos2d::ccColor3B color);
 // Background of a notification card (textured, violet outline and glow).

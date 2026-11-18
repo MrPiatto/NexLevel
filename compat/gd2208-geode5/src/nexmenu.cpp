@@ -152,7 +152,7 @@ void NexMenu::buildTab() {
     const char* icons[] = {"room", "players", "chat", "history", "network", "settings"};
     constexpr int kTabs = 6;
     const float tabW = 72.f, barW = tabW * kTabs + 8.f;
-    add(kit::card({barW, 26.f}, 13.f, kit::rgba(30, 34, 64, .9f), kit::rgba(kit::kViolet, .25f), .6f), W / 2.f, H - 64.f);
+    add(kit::buttonBackground({barW, 26.f}, kit::Style::Secondary), W / 2.f, H - 64.f);
     for (int i = 0; i < kTabs; ++i) {
         const bool sel = static_cast<int>(m_tab) == i;
         auto* b = kit::button(names[i], {tabW - 4.f, 20.f}, sel ? kit::Style::Primary : kit::Style::Ghost, this,
