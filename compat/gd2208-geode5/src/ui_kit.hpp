@@ -63,7 +63,11 @@ public:
 
 private:
     bool init(bool on);
-    cocos2d::CCDrawNode* m_draw = nullptr;
+    void place(bool animate);
+    cocos2d::CCDrawNode* m_draw = nullptr;  // drawn fallback if the textures are missing
+    cocos2d::CCNode* m_trackOn = nullptr;   // slanted tracks (logo style): violet when on, dark when off
+    cocos2d::CCNode* m_trackOff = nullptr;
+    cocos2d::CCSprite* m_knob = nullptr;
     bool m_on = false;
 };
 

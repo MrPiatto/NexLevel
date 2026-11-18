@@ -59,6 +59,7 @@ pill('btn_primary', '#7b3cff', '#c43cff')
 pill('btn_secondary', '#262b55', '#1d2146', alpha=.95, border='#9a6bff', borderA=.6, gloss=True)
 pill('btn_danger', '#ff4468', '#b8309a')
 pill('btn_ghost', '#000000', '#000000', alpha=0, border='#aab0d8', borderA=.45, gloss=False, shadow=False)
+pill('btn_good', '#16c79a', '#0f9d8c')
 
 # ---- buttons: slanted like the NexLevel logo (replaces the round pills above) ----
 # Option A: slanted like the logo (parallelogram), 72x40 texture, shape 64x32, skew 7
@@ -78,6 +79,13 @@ slant('btn_primary','<stop offset="0" stop-color="#7b3cff"/><stop offset="1" sto
 slant('btn_secondary','<stop offset="0" stop-color="#0d0b18"/><stop offset="1" stop-color="#0d0b18"/>','#9b4dff',1,True)
 slant('btn_danger','<stop offset="0" stop-color="#ff3d6e"/><stop offset="1" stop-color="#b8309a"/>','#ffc0d0',.8,True)
 slant('btn_ghost','<stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#000"/>','#9aa0c8',.6,False,0)
+
+
+# ---- toggle knob: white slanted block with a soft shadow (16x14 pt) ----
+render('toggle_knob', 16, 14, '''<polygon points="5.2,2.4 14,2.4 10.8,11.4 2,11.4" fill="#000" opacity=".45" filter="url(#s)" transform="translate(0,.8)"/>
+<polygon points="5.2,2.4 14,2.4 10.8,11.4 2,11.4" fill="url(#k)" stroke="#ffffff" stroke-width=".5" stroke-linejoin="round"/>''',
+       '''<linearGradient id="k" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#ddd6ff"/></linearGradient>
+<filter id="s" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation=".8"/></filter>''')
 
 # ---- icons: white on transparent, 16x16 pt, tinted in game ----
 I = {

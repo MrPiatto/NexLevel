@@ -8,7 +8,7 @@
 - **Chat:** write @Name to mention someone (they get a notification even with the chat open); /mute Name hides someone's messages just for you (/unmute Name to undo).
 - **End of session summary:** time spent, how many objects you placed and the top builder.
 - **Room list:** rooms of another NexLevel version are greyed out instead of failing when you join.
-- **Loading screen when joining:** a black screen with the NexLevel logo slides in while you connect and the level loads, then slides away once the room is open (at least 5 seconds), with a whoosh sound going in and out.
+- **Loading screen when joining:** a black screen with the NexLevel logo slides in while you connect and the level loads, then slides away once the room is open (at least 5 seconds), with soft edges and a whoosh sound going in and out.
 - **NexLevel bar:** a small tab at the top of the editor drops down the room status and quick buttons (Look here, Players, Chat, Menu). It replaces the button in the Esc menu.
 - **Chat key:** press **T** in the editor to open the room chat (setting "Chat key"). Unread messages show on the bar.
 - **New notifications:** small cards in the top-right corner with a violet outline and a soft sound (setting "Notification sound"), for chat, players and warnings.

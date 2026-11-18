@@ -341,10 +341,40 @@ bool Toggle::init(bool on) {
     setAnchorPoint({.5f, .5f});
     m_draw = CCDrawNode::create();
     addChild(m_draw);
+    // Textured switch: two slanted tracks (shown one at a time) and a white slanted knob that slides.
+    m_trackOn = buttonBackground({30.f, 15.f}, Style::Primary);
+    m_trackOff = buttonBackground({30.f, 15.f}, Style::Secondary);
+    m_knob = CCSprite::create(spriteName("toggle_knob.png").c_str());
+    if (m_knob && m_knob->getContentSize().width > 0.f) {
+        m_trackOn->setPosition({15.f, 7.5f});
+        m_trackOff->setPosition({15.f, 7.5f});
+        addChild(m_trackOff, 0);
+        addChild(m_trackOn, 0);
+        m_knob->setScale(13.f / m_knob->getContentSize().width);
+        addChild(m_knob, 1);
+        m_on = on;
+        place(false);
+        return true;
+    }
+    m_knob = nullptr;
     setOn(on);
     return true;
 }
+void Toggle::place(bool animate) {
+    m_trackOn->setVisible(m_on);
+    m_trackOff->setVisible(!m_on);
+    const CCPoint target{m_on ? 21.f : 9.f, 7.5f};
+    m_knob->stopAllActions();
+    if (animate) m_knob->runAction(CCEaseOut::create(CCMoveTo::create(.12f, target), 2.f));
+    else m_knob->setPosition(target);
+}
 void Toggle::setOn(bool on) {
+    if (m_knob) {
+        const bool changed = on != m_on;
+        m_on = on;
+        place(changed);
+        return;
+    }
     m_on = on;
     m_draw->clear();
     const float w = 30.f, h = 15.f, r = h / 2.f;

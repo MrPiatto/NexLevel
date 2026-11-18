@@ -20,7 +20,8 @@ namespace {
 
 constexpr float kMinSeconds = 5.f;
 constexpr float kMaxSeconds = 120.f;  // safety net: never stay stuck on the screen
-constexpr float kSlide = .4f;
+constexpr float kSlide = .5f;
+constexpr float kFeather = 110.f;  // soft edge on both sides, so the moving screen has no hard border
 
 // "Whoosh" with the slide (resources/sounds), at the notification-sound setting.
 void whoosh(const char* file) {
@@ -58,7 +59,7 @@ public:
         whoosh("whoosh_out.ogg");
         const auto win = CCDirector::sharedDirector()->getWinSize();
         this->stopAllActions();
-        this->runAction(CCSequence::create(CCEaseIn::create(CCMoveTo::create(kSlide, {-win.width, 0.f}), 2.2f),
+        this->runAction(CCSequence::create(CCEaseSineIn::create(CCMoveTo::create(kSlide, {-win.width - kFeather, 0.f})),
                                            CCCallFunc::create(this, callfunc_selector(JoinLoading::removeFromParent)), nullptr));
     }
 
@@ -66,6 +67,18 @@ public:
         if (!CCLayerColor::initWithColor({0, 0, 0, 255})) return false;
         const auto win = CCDirector::sharedDirector()->getWinSize();
         this->setContentSize(win);
+        // Soft edges just outside the screen-sized black area: transparent -> black on the left,
+        // black -> transparent on the right. Off screen while it is still, visible while it slides.
+        if (auto* left = CCLayerGradient::create({0, 0, 0, 0}, {0, 0, 0, 255}, {1.f, 0.f})) {
+            left->setContentSize({kFeather, win.height});
+            left->setPosition({-kFeather, 0.f});
+            this->addChild(left, -1);
+        }
+        if (auto* right = CCLayerGradient::create({0, 0, 0, 255}, {0, 0, 0, 0}, {1.f, 0.f})) {
+            right->setContentSize({kFeather, win.height});
+            right->setPosition({win.width, 0.f});
+            this->addChild(right, -1);
+        }
 
         m_logo = CCSprite::create("wordmark.png"_spr);
         if (m_logo && m_logo->getContentSize().width > 0.f) {
@@ -90,8 +103,8 @@ public:
 
         // Slide in from the right.
         whoosh("whoosh_in.ogg");
-        this->setPosition({win.width, 0.f});
-        this->runAction(CCEaseOut::create(CCMoveTo::create(kSlide, {0.f, 0.f}), 2.2f));
+        this->setPosition({win.width + kFeather, 0.f});
+        this->runAction(CCEaseSineOut::create(CCMoveTo::create(kSlide, {0.f, 0.f})));
         this->setTouchEnabled(true);
         this->scheduleUpdate();
         m_start = std::chrono::steady_clock::now();
