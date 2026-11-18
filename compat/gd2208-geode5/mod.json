@@ -76,6 +76,9 @@
 	"resources": {
 		"sprites": [
 			"resources/*.png"
+		],
+		"files": [
+			"resources/sounds/*.ogg"
 		]
 	},
 	"tags": [

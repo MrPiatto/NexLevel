@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <cmath>
 
 using namespace geode::prelude;
@@ -20,6 +21,17 @@ namespace {
 constexpr float kMinSeconds = 5.f;
 constexpr float kMaxSeconds = 120.f;  // safety net: never stay stuck on the screen
 constexpr float kSlide = .4f;
+
+// "Whoosh" with the slide (resources/sounds), at the notification-sound setting.
+void whoosh(const char* file) {
+    if (!Mod::get()->getSettingValue<bool>("toast-sound")) return;
+    std::error_code ec;
+    auto dir = Mod::get()->getResourcesDir();
+    auto path = dir / file;
+    if (!std::filesystem::exists(path, ec)) path = dir / (std::string(GEODE_MOD_ID) + "." + file);
+    if (!std::filesystem::exists(path, ec)) return;
+    if (auto* audio = FMODAudioEngine::sharedEngine()) audio->playEffect(geode::utils::string::pathToString(path), 1.f, 0.f, .7f);
+}
 
 class JoinLoading : public CCLayerColor {
 public:
@@ -43,6 +55,7 @@ public:
     void leave() {
         if (m_leaving) return;
         m_leaving = true;
+        whoosh("whoosh_out.ogg");
         const auto win = CCDirector::sharedDirector()->getWinSize();
         this->stopAllActions();
         this->runAction(CCSequence::create(CCEaseIn::create(CCMoveTo::create(kSlide, {-win.width, 0.f}), 2.2f),
@@ -76,6 +89,7 @@ public:
         this->addChild(tagline);
 
         // Slide in from the right.
+        whoosh("whoosh_in.ogg");
         this->setPosition({win.width, 0.f});
         this->runAction(CCEaseOut::create(CCMoveTo::create(kSlide, {0.f, 0.f}), 2.2f));
         this->setTouchEnabled(true);
