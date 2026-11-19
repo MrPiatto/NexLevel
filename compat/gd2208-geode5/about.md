@@ -14,13 +14,17 @@ No IP addresses, no router settings.
 - **Every object:** placing, moving, rotating, scaling, colouring and deleting.
 - **Level settings:** colour channels, background, ground, fonts, start options, guidelines and the song.
 - **Everyone's view:** a thin coloured outline with each player's name shows where they are working.
-- **Playtests:** when someone playtests, the others watch their icon play right in the editor, with a trail in that player's colour.
+- **Playtests:** when someone playtests, the others watch their icon play right in the editor, with their name above it and a trail in that player's colour.
+- **Start positions**, triggers and every other object type.
 
 ## The NexLevel menu
-Tabs: **Room** (code, players, objects, uptime,), **Players** (ping, profiles, Go to player, view-only, kick), **Chat**, **Network** (connection quality, live ping chart) and **Settings**.
+Open it from the **NexLevel** tab at the top of the editor (or press **T** for the chat).
+Tabs: **Room** (code, players, objects, uptime), **Players** (ping, profiles, Go to / Follow a player, manage, bans), **Chat** (@mentions, /mute), **History** (who placed, deleted and edited what; restore points for the host), **Network** (connection quality, live ping chart) and **Settings**. A **Bug** button opens a ready-to-fill bug report on GitHub.
 
 ## Rooms
-- Up to 16 players. The host can kick players, make them view-only and close the room.
+- Up to 16 players. The host can kick or ban players (bans are kept for all rooms), make them view-only, undo all their work and close the room.
+- **Public, private or hidden:** public rooms are joined from the main-menu list, private ones are listed and players ask the host to join, hidden ones need the code.
+- **Warnings for everyone** when someone deletes or copies 100+ objects, tries to save a copy of the level or changes the level settings.
 - If the host leaves the editor, the room stays open and everyone keeps building.
 - Dropped connections reconnect on their own, without losing work.
 - Autosave into the host's level while the room changes. Only the host keeps the level: players can't save someone else's room.
@@ -32,9 +36,9 @@ NexLevel does **not** collect, upload or sell any data, and has no analytics.
 - **Direct connections:** without a relay, players connect to the host directly (UPnP or same Wi-Fi), so the host's and players' IPs are visible to each other's computers, as in any online game. Your IP is hidden in the menu until you tap Show.
 - **Encryption:** all room traffic is end-to-end encrypted (X25519 + XChaCha20-Poly1305).
 - **Discord status:** if the Discord app is running, NexLevel tells it what you're doing (hosting / in a room, player count) so it shows on your profile. Only your local Discord app is contacted. Turn it off in the settings.
-- **Public rooms:** only if the host turns it on, the room's level name, the host's GD name and the player count are listed on the relay so others can find it.
+- **Room list:** for public and private rooms (the host chooses; hidden rooms are never listed), the room's level name, the host's GD name and the player count are listed on the relay so others can find it. A private room's code is never listed: players who ask to join get in only if the host accepts.
 - **Community numbers:** the main-menu NexLevel menu reads public counters (downloads on GitHub / the Geode index, players and rooms on the relays). They are totals only: no names or IPs.
 - **Update check:** at startup NexLevel asks GitHub for the latest official release (can be turned off in the settings). Nothing about you is sent.
-- **Local files only:** settings and the host's autosaves are saved on the host's PC.
+- **Local files only:** settings, the ban list, the host's autosaves and restore points are saved on the host's PC.
 
 Everyone in a room needs the same Geometry Dash and NexLevel version.
