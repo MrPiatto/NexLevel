@@ -3,6 +3,8 @@
 // GD (bindings 2.2081): FMODAudioEngine::playEffect(path, speed, unknown, volume).
 #include "toast.hpp"
 
+#include "session_manager.hpp"
+
 #include "ui_kit.hpp"
 
 #include <Geode/ui/OverlayManager.hpp>
@@ -155,6 +157,7 @@ private:
 } // namespace
 
 void toast(const std::string& title, const std::string& text, ToastKind kind) {
+    if (SessionManager::get()->quitting()) return;  // the game is closing: nothing to show
     log::info("NexLevel notice: {}{}{}", title, text.empty() ? "" : " - ", text);
     // Next frame, and only with a running scene: notices can come while cocos2d tears a scene
     // down (e.g. quitting the game), where adding nodes is not safe.

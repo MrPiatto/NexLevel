@@ -143,6 +143,7 @@ void SessionManager::extrasTick() {
 }
 
 void SessionManager::sessionSummary() {
+    if (m_quitting) return;  // nobody would see it
     if (!inSession()) {
         m_sessionPlaced.clear();
         m_history.clear();

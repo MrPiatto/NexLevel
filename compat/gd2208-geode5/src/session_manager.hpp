@@ -208,6 +208,9 @@ public:
     // while the host is outside the editor; a player's copy goes into the level open in their editor.
     // toDisk: also write the save file (CCLocalLevels.dat) right away.
     void saveNow(bool toDisk, const char* reason);
+    // Closing the game while in a room: save into the level and close the room, quietly.
+    void shutdownForQuit();
+    bool quitting() const { return m_quitting; }
     bool hosting() const { return m_host != nullptr; }
     std::size_t playerCount() const;  // others in the room (not counting this player)
 
@@ -215,6 +218,7 @@ private:
     void autosaveTick();
     void featuresTick();
     std::deque<ChatLine> m_chatLog;
+    bool m_quitting = false;
     std::size_t m_chatUnread = 0;
     std::size_t m_eraseBurst = 0;
     std::chrono::steady_clock::time_point m_lastErase{};

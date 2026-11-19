@@ -43,7 +43,16 @@ std::size_t SessionManager::playerCount() const {
     return n;
 }
 
+void SessionManager::shutdownForQuit() {
+    // Quitting: do as little as possible. The room goes into the level in memory only (GD writes
+    // its save file itself on exit), and the room closes without notices or summaries.
+    m_quitting = true;
+    saveNow(false, "closing the game");
+    leave();
+}
+
 void SessionManager::saveNow(bool toDisk, const char* reason) {
+    if (m_quitting) toDisk = false;
     if (g_saving) return;
     g_saving = true;
     struct Reset { ~Reset() { g_saving = false; } } reset;
@@ -119,9 +128,7 @@ class $modify(NLMenuLayer, MenuLayer) {
         body += ".\nClosing Geometry Dash <cr>ends the room for everyone</c>.\nThe level is saved first, nothing is lost.";
         geode::createQuickPopup("Stop hosting?", body, "Cancel", "Close GD", [](FLAlertLayer*, bool close) {
             if (!close) return;
-            auto* sm = SessionManager::get();
-            sm->saveNow(true, "closing the game");
-            sm->leave();
+            SessionManager::get()->shutdownForQuit();  // room into the level (GD's exit save writes it)
             if (auto* menu = MenuLayer::get()) menu->endGame();
         });
     }
