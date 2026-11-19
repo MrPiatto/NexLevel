@@ -437,6 +437,10 @@ public:
         std::size_t n = 0;
         forEachLevelObject([&](GameObject* o) {
             auto props = read(o);
+            if (localOnly(o)) {  // the host's own start positions stay the host's
+                cachePut(o, std::move(props));
+                return;
+            }
             auto id = sm->newId();
             if (!id || props.empty()) return;
             map(o, *id);
@@ -477,12 +481,17 @@ public:
         std::unordered_map<std::string, std::vector<nls::NetId>> byContent;
         byContent.reserve(view->objects().size());
         for (const auto& [id, state] : view->objects()) {
-            if (!nls::isLevelSettings(id) && spawnable(state.props)) byContent[nls::toSaveString(state.props)].push_back(id);
+            if (nls::isLevelSettings(id) || !spawnable(state.props) || skipIncoming(state.props)) continue;
+            byContent[nls::toSaveString(state.props)].push_back(id);
         }
         std::vector<GameObject*> extras;
         std::size_t matched = 0;
         forEachLevelObject([&](GameObject* o) {
             auto props = read(o);
+            if (localOnly(o)) {  // this player's own start positions are kept, not matched
+                cachePut(o, std::move(props));
+                return;
+            }
             auto it = byContent.find(nls::toSaveString(props));
             if (it == byContent.end() || it->second.empty()) {
                 extras.push_back(o);
@@ -548,7 +557,7 @@ public:
                 continue;
             }
             if (!obj) {
-                spawn(id, state->props);
+                if (!skipIncoming(state->props)) spawn(id, state->props);
                 continue;
             }
             auto cached = m_cache.find(obj);
@@ -579,6 +588,16 @@ private:
         for (auto* o : CCArrayExt<GameObject*>(m_layer->m_objects)) {
             if (!isUnderEditorUI(o)) f(o);
         }
+    }
+
+    // Start positions are personal by default (each player tests from where they like): they are
+    // neither sent nor taken from the room unless the "Share start positions" setting is on.
+    static bool shareStartPositions() { return Mod::get()->getSettingValue<bool>("share-start-pos"); }
+    static bool localOnly(GameObject* o) { return o && o->m_objectID == 31 && !shareStartPositions(); }
+    static bool skipIncoming(const nls::PropMap& props) {
+        if (shareStartPositions()) return false;
+        auto it = props.find(1);
+        return it != props.end() && it->second == "31";
     }
 
     // Objects from the network must be something GD can build: a known object id (key 1).
@@ -671,7 +690,7 @@ private:
 
     void publishCreate(GameObject* o, const nls::PropMap& props) {
         auto* sm = SessionManager::get();
-        if (!linked() || m_objToId.contains(o)) return;
+        if (!linked() || m_objToId.contains(o) || localOnly(o)) return;
         auto id = sm->newId();
         if (!id) return;
         map(o, *id);

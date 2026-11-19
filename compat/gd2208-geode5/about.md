@@ -15,7 +15,7 @@ No IP addresses, no router settings.
 - **Level settings:** colour channels, background, ground, fonts, start options, guidelines and the song.
 - **Everyone's view:** a thin coloured outline with each player's name shows where they are working.
 - **Playtests:** when someone playtests, the others watch their icon play right in the editor, with their name above it and a trail in that player's colour.
-- **Start positions**, triggers and every other object type.
+- **Triggers** and every other object type. Start positions stay personal (each player tests from where they like), unless "Share start positions" is turned on.
 
 ## The NexLevel menu
 Open it from the **NexLevel** tab at the top of the editor (or press **T** for the chat).

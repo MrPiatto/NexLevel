@@ -53,6 +53,12 @@
 			"description": "Where NexLevel downloads the list of official relays. Leave as is unless you run your own network.",
 			"default": ""
 		},
+		"share-start-pos": {
+			"type": "bool",
+			"name": "Share start positions",
+			"description": "Off (default): everyone keeps their own start positions to test from where they like. On: start positions are shared with the room like any other object.",
+			"default": false
+		},
 		"toast-sound": {
 			"type": "bool",
 			"name": "Notification sound",

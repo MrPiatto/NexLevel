@@ -1,5 +1,5 @@
 # v1.0.7
-- **Start positions are shared now:** they were skipped (their save data has a different format), and the log filled up with warnings about them, which could slow the game down.
+- **Start positions:** still personal by default (everyone tests from where they like), now on purpose: the new setting "Share start positions" shares them with the room. Fixed the log filling up with warnings about them, which could slow the game down.
 - **Fixed duplicated blocks:** when an editor was matched to a room (joining, or the host coming back into the editor), objects far from the camera could stay in place while the room's copy was created again, leaving two blocks on top of each other.
 - **Report a bug:** a "Bug" button in the NexLevel menu opens a GitHub issue with your versions already filled in.
 - Update notice and welcome screen in the new style, with the NexLevel logo.
