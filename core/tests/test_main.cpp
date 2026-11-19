@@ -124,7 +124,13 @@ static void testParseSaveString() {
     auto emptyVal = sync::parseSaveString("1,1,21,");
     CHECK(emptyVal && emptyVal->at(21).empty());
     CHECK(!sync::parseSaveString("1,1,2"));        // key without value
-    CHECK(!sync::parseSaveString("1,1,x,2"));      // non-numeric key
+    // Non-numeric keys (a start position's own settings): kept as one tail, written back unchanged.
+    const std::string startPos = "1,31,2,135,3,45,kA2,0,kA3,1,kA4,2";
+    auto sp = sync::parseSaveString(startPos);
+    CHECK(sp && sp->at(1) == "31" && sp->at(2) == "135" && sp->at(sync::kTailKey) == "kA2,0,kA3,1,kA4,2");
+    CHECK(sp && sync::toSaveString(*sp) == startPos);
+    auto odd = sync::parseSaveString("1,1,x,2");
+    CHECK(odd && odd->at(1) == "1" && odd->at(sync::kTailKey) == "x,2");
     CHECK(!sync::parseSaveString("1,1,1,2"));      // duplicate key
     auto rt = sync::parseSaveString(sync::toSaveString(*p));
     CHECK(rt && *rt == *p);

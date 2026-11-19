@@ -16,8 +16,13 @@ std::optional<PropMap> parseSaveString(std::string_view s) {
         if (keyEnd == std::string_view::npos) return std::nullopt;  // key without value
         auto keyStr = s.substr(pos, keyEnd - pos);
         int key = 0;
+        if (keyStr.empty()) return std::nullopt;
         auto [ptr, ec] = std::from_chars(keyStr.data(), keyStr.data() + keyStr.size(), key);
-        if (ec != std::errc{} || ptr != keyStr.data() + keyStr.size() || keyStr.empty()) return std::nullopt;
+        if (ec != std::errc{} || ptr != keyStr.data() + keyStr.size() || key < 0) {
+            // Not a number: everything from here on is kept as it is (see kTailKey).
+            out[kTailKey] = std::string(s.substr(pos));
+            return out;
+        }
 
         auto valStart = keyEnd + 1;
         auto valEnd = s.find(',', valStart);
@@ -34,11 +39,16 @@ std::string toSaveString(const PropMap& props) {
     std::string out;
     bool first = true;
     for (const auto& [k, v] : props) {
+        if (k == kTailKey) continue;  // written last
         if (!first) out += ',';
         first = false;
         out += std::to_string(k);
         out += ',';
         out += v;
+    }
+    if (auto tail = props.find(kTailKey); tail != props.end() && !tail->second.empty()) {
+        if (!first) out += ',';
+        out += tail->second;
     }
     return out;
 }

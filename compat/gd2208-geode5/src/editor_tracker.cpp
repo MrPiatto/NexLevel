@@ -784,7 +784,11 @@ private:
         std::string s = o->getSaveString(m_layer);
         auto p = nls::parseSaveString(s);
         if (!p) {
-            log::warn("NexLevel diff: unparsable save string for uid={} id={}", o->m_uniqueID, o->m_objectID);
+            // Once per object: this runs every frame for selected objects (the log used to fill up).
+            static std::unordered_set<int> warned;
+            if (warned.size() < 200 && warned.insert(o->m_uniqueID).second) {
+                log::warn("NexLevel diff: unparsable save string for uid={} id={}", o->m_uniqueID, o->m_objectID);
+            }
             return {};
         }
         return std::move(*p);

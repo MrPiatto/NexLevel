@@ -13,7 +13,12 @@ namespace nexlevel::sync {
 
 using PropMap = std::map<int, std::string>;
 
-// Returns nullopt for malformed input (odd field count, non-numeric or duplicate key).
+// Some objects end their save string with fields whose keys are not numbers (a start position
+// carries its own level settings as "kA2,0,kA3,0,..."). From the first such key on, the rest of
+// the string is kept as one value under this key and written back at the end, unchanged.
+inline constexpr int kTailKey = -1;
+
+// Returns nullopt for malformed input (odd field count, empty or duplicate key).
 // A trailing ';' (level-string object separator) is ignored.
 std::optional<PropMap> parseSaveString(std::string_view s);
 
