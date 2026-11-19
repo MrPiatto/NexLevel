@@ -494,8 +494,13 @@ public:
             ++matched;
         });
         for (auto* o : extras) o->retain();
+        // GD's editor only keeps the objects near the camera on screen (the others have no parent
+        // until you scroll to them), so "on screen" is not a test for "in the level": checking it
+        // left far-away extras in place while their room copies were created again (duplicates).
+        std::unordered_set<GameObject*> present;
+        forEachLevelObject([&](GameObject* o) { present.insert(o); });
         for (auto* o : extras) {
-            if (o->getParent()) removeForRemote(o);
+            if (present.contains(o)) removeForRemote(o);
         }
         for (auto* o : extras) o->release();
         std::vector<std::pair<nls::NetId, const nls::PropMap*>> missing;
@@ -725,7 +730,7 @@ private:
         releaseFromEditor(o);
         m_layer->removeObject(o, true);
         if (exit) {
-            if (exit->getParent()) m_layer->removeObject(exit, true);
+            if (m_layer->m_objects && m_layer->m_objects->containsObject(exit)) m_layer->removeObject(exit, true);  // on screen or not
             exit->release();
         }
     }

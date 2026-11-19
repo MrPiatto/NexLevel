@@ -1,4 +1,5 @@
 # v1.0.7
+- **Fixed duplicated blocks:** when an editor was matched to a room (joining, or the host coming back into the editor), objects far from the camera could stay in place while the room's copy was created again, leaving two blocks on top of each other.
 - **Report a bug:** a "Bug" button in the NexLevel menu opens a GitHub issue with your versions already filled in.
 - Update notice and welcome screen in the new style, with the NexLevel logo.
 - **New look:** every NexLevel panel, card, button and notification is redrawn with real high-resolution textures (soft violet glow, slanted buttons like the NexLevel logo, smooth corners), the logo in the menu header, and icons on the tabs, notifications and warnings.
